@@ -1,0 +1,42 @@
+#!/bin/sh
+
+NOTIFILE='/jffs/www/notification.js'
+MAGICNUMBER=20
+
+. /jffs/scripts/include/string.sh
+
+# Remove any stale file
+TIMESTAMP="$(date -r '/www/notification.css')" # Use css file date since js will be modified
+if [ -f "$NOTIFILE" ]; then
+	if ! grep -Fq "$TIMESTAMP" "$NOTIFILE"; then
+		mount | grep -Fq '/www/notification.js' && umount '/www/notification.js'
+		rm "$NOTIFILE"
+	else
+		# Up to date, nothing to do here
+		unset TIMESTAMP
+	fi
+fi
+
+# Make new file
+if [ -n "$TIMESTAMP" ]; then
+	mkdir -p "$(dirname "$NOTIFILE")"
+	cp '/www/notification.js' "$NOTIFILE"
+
+	# Add WebUI stuff where samba stuff is
+	line_append 'var enable_samba' "var misc_http_x = '<% nvram_get(\"misc_http_x\"); %>';" "$NOTIFILE"
+	line_append 'samba: 0,' 'webuiwan: 0,' "$NOTIFILE"
+	str_append 'notification.ftp ,notification.samba' ' ,notification.webuiwan' "$NOTIFILE"
+	str_append '&& !notification.samba' ' && !notification.webuiwan' "$NOTIFILE"
+	line_prepend "st_samba_force_mode == ''" "if(misc_http_x != 0){notification.array[${MAGICNUMBER}] = 'noti_webuiwan'; notification.webuiwan = 1; notification.desc[${MAGICNUMBER}] = 'Your WebUI is currently accessable from the internet. We strongly recommend that you disable [ Enable Web Access from WAN ] to avoid security risk.'; notification.action_desc[${MAGICNUMBER}] = 'Change now'; notification.clickCallBack[${MAGICNUMBER}] = \"location.href = 'Advanced_System_Content.asp';\";}else{notification.webuiwan = 0;}" "$NOTIFILE"
+	str_append '|| notification.samba' ' || notification.webuiwan' "$NOTIFILE"
+	line_append 'this.samba = 0;' 'this.webuiwan = 0;' "$NOTIFILE"
+	file_append "// Source timestamp: $TIMESTAMP" "$NOTIFILE"
+
+	# Disable anonymous samba warning
+	str_replace 'st_samba_mode != 4' 'st_samba_mode == -1' "$NOTIFILE"
+fi
+
+# Mount over stock file
+if ! mount | grep -Fq '/www/notification.js'; then
+	mount -o bind "$NOTIFILE" '/www/notification.js'
+fi

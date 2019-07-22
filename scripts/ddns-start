@@ -1,0 +1,222 @@
+#!/bin/sh
+# shellcheck shell=ash
+# Usage: ddns-start [IPv4] [IPv6]
+
+# Site to check your IP (use EXTERNIP4 and EXTERNIP6 for providers which are not dual-stack)
+EXTERNIP='https://domains.google.com/checkip'
+
+# Gandi 24-character API key
+APIKEY='XXXXXXXXXXXXXXXXXXXXXXXX'
+# The domain to be updated
+DOMAIN='example.com'
+# The subdomain can use curl url syntax, eg "{@,*}"
+SUBDOMAIN='home'
+# Gandi API endpoint
+GANDIAPI='https://dns.api.gandi.net/api/v5'
+
+
+ddns_update_ipv4() {
+	HTTP_CODE="$(curl	-fs -w '%{http_code}' -o /dev/null -X PUT 	\
+		-H 'Content-Type: application/json' -H "X-Api-Key: $APIKEY"	\
+		-d "{\"rrset_ttl\": 10800, \"rrset_values\":[\"$1\"]}"	\
+		"$GANDIAPI/domains/${DOMAIN}/records/$SUBDOMAIN/A")"
+
+	[ "$HTTP_CODE" = '201' ]
+	return $?
+}
+
+ddns_update_ipv6() {
+	if [ -n "$1" ]; then
+		HTTP_CODE="$(curl	-fs -w '%{http_code}' -o /dev/null -X PUT	\
+			-H 'Content-Type: application/json' -H "X-Api-Key: $APIKEY"	\
+			-d "{\"rrset_ttl\": 10800, \"rrset_values\":[\"$1\"]}"	\
+			"$GANDIAPI/domains/${DOMAIN}/records/$SUBDOMAIN/AAAA")"
+		[ "$HTTP_CODE" = '201' ]
+		return $?
+	fi
+	# Currently no IPv6 address assigned, remove any stale ddns entry
+	HTTP_CODE="$(curl	-fs -w '%{http_code}' -o /dev/null -X DELETE	\
+		-H 'Content-Type: application/json' -H "X-Api-Key: $APIKEY"	\
+		"$GANDIAPI/domains/${DOMAIN}/records/$SUBDOMAIN/AAAA")"
+	# 404 is also fine here since it just means there was nothing to delete
+	[ "$HTTP_CODE" = '404' ] || [ "$HTTP_CODE" = '201' ]
+	return $?
+}
+
+###
+### End of user config
+###
+
+LOCKFILE='/tmp/.ddns-start.lck'
+CACHEFILE='/jffs/configs/.ddns-start.cache'
+
+is_local_ipv4() {
+	printf '%s\n' "$1" | grep -Eq '(^127\.)|(^10\.)|(^172\.1[6-9]\.)|(^172\.2[0-9]\.)|(^172\.3[0-1]\.)|(^192\.168\.)'
+}
+
+is_local_ipv6() {
+	printf '%s\n' "$1" | grep -Eq '(^::1?$)|(^[fF][cCdDeE])'
+}
+
+pwait() {
+	local PROCESS_ID
+	for PROCESS_ID in "$@"; do
+		[ -n "$PROCESS_ID" ] && while [ -d "/proc/$PROCESS_ID" ]; do usleep 200000; done
+	done
+}
+
+# Send message to syslog or terminal if called by a user
+# Usage: ddns_log [PRIORITY] MESSAGE
+# 	Priorities: debug, info, notice, warning, err, crit, alert, emerg
+# Check for user in main script to allow log messages from subshells
+[ -t 0 ] && CONSOLE_TTY="$(tty)"
+ddns_log() {
+	[ $# -lt 2 ] && set -- "" "$@"
+	[ -n "$CONSOLE_TTY" ] && [ "$1" != 'debug' ] && printf '%s\n' "$2" >"$CONSOLE_TTY"
+	logger -t "ddns-start[$$]" -p "user.${1:-"notice"}" "$2"
+}
+
+# Make sure only one ddns update runs at a time
+ddns_lock() {
+	[ ! -p "$LOCKFILE" ] && mknod "$LOCKFILE" p && trap '{ rm -f "$LOCKFILE"; exit; }' EXIT INT TERM
+}
+
+# Read the last updated IPs
+ddns_cache_get() {
+	if [ -f "$CACHEFILE" ]; then
+		local LINE CACHE_IPV4 CACHE_IPV6
+		while read -r LINE; do
+			case "$LINE" in
+				'IPv4='*) CACHE_IPV4="${LINE#"IPv4="}";;
+				'IPv6='*) CACHE_IPV6="${LINE#"IPv6="}";;
+			esac
+		done < "$CACHEFILE"
+		printf '%s\n' "$CACHE_IPV4 $CACHE_IPV6"
+	fi
+}
+
+# Save the current IPs
+ddns_cache_set() {
+	local IPV4 IPV6
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			'-4')
+				IPV4="_$2"
+				shift
+			;;
+			'-6')
+				IPV6="_$2"
+				shift
+			;;
+		esac
+		shift
+	done
+	if [ -n "$IPV4" ] && [ -n "$IPV6" ]; then
+		printf 'IPv4=%s\nIPv6=%s\n' "${IPV4#_}" "${IPV6#_}" > "$CACHEFILE"
+	elif [ -n "$IPV4" ]; then
+		sed -ni -e '/^IPv4=/!p' -e "\$aIPv4=${IPV4#_}" "$CACHEFILE"
+	elif [ -n "$IPV6" ]; then
+		sed -ni -e '/^IPv6=/!p' -e "\$aIPv6=${IPV6#_}" "$CACHEFILE"
+	fi
+}
+
+# Get IPv4 address
+# Usage: ddns_get_ipv4
+ddns_get_ipv4() {
+	local IP
+	IP="$(nvram get wan0_ipaddr)"
+	if [ -z "$IP" ] || is_local_ipv4 "$IP"; then
+		IP="$(curl -fs4 "${EXTERNIP4:-"$EXTERNIP"}")"
+		[ -n "$IP" ] && ddns_log 'info' "Detected WAN IP: $IP"
+	fi
+	echo "$IP"
+}
+
+# Get IPv6 address
+# Usage: ddns_get_ipv6
+ddns_get_ipv6() {
+	local COUNTER=0 IP
+	if [ "$(nvram get ipv6_service)" != 'disabled' ]; then
+		IP="$(nvram get ipv6_rtr_addr)"
+		while [ -z "$IP" ] && [ $COUNTER -le 20 ]; do
+			sleep 1
+			COUNTER=$((COUNTER + 1))
+			IP="$(nvram get ipv6_rtr_addr)"
+		done
+		if [ -z "$IP" ] || is_local_ipv6 "$IP"; then
+			IP="$(curl -fs6 "${EXTERNIP6:-"$EXTERNIP"}")"
+			[ -n "$IP" ] && ddns_log 'info' "Detected WAN IPv6: $IP"
+		fi
+	fi
+	echo "$IP"
+}
+
+###
+### Start doing stuff
+###
+
+(
+	# Check this is the only instance
+	if ! ddns_lock; then
+		ddns_log 'ddns update already in progress'
+		return
+	fi
+
+	# Get the previously set values
+	DDNS_CACHE="$(ddns_cache_get)"
+	CACHE_IPV4="${DDNS_CACHE%% *}"
+	CACHE_IPV6="${DDNS_CACHE##* }"
+
+	# Update both at the same time
+	if [ "$(type ddns_update_ipv6)" = 'ddns_update_ipv6 is a shell function' ]; then
+		(
+			RESULT=1
+			IP="${2:-"$(ddns_get_ipv6)"}"
+			if [ "$CACHE_IPV6" = "$IP" ]; then
+				ddns_log 'IPv6 is up to date'
+			elif ddns_update_ipv6 "$IP"; then
+				ddns_log "IPv6 ddns successfully updated (${IP:-"unset"})"
+			else
+				ddns_log 'IPv6 failed to update'
+				RESULT=0
+			fi
+			echo "ipv6 $RESULT $IP" > "$LOCKFILE"
+		) &
+		PID6=$!
+	fi
+	if [ "$(type ddns_update_ipv4)" = 'ddns_update_ipv4 is a shell function' ]; then
+		(
+			RESULT=1
+			IP="${1:-"$(ddns_get_ipv4)"}"
+			if [ -z "$IP" ]; then
+				ddns_log 'Unable to determine IPv4 address'
+				kill "$PID6" 2>/dev/null
+				RESULT=0
+			elif [ "$CACHE_IPV4" = "$IP" ]; then
+				ddns_log 'IPv4 is up to date'
+			elif ddns_update_ipv4 "$IP"; then
+				ddns_log "IPv4 ddns successfully updated ($IP)"
+			else
+				ddns_log 'IPv4 failed to update'
+				kill "$PID6" 2>/dev/null
+				RESULT=0
+			fi
+			/sbin/ddns_custom_updated "$RESULT"
+			[ ! -t 0 ] && kill -INT "$$"
+			echo "ipv4 $RESULT $IP" > "$LOCKFILE"
+		) &
+		PID4=$!
+	else
+		/sbin/ddns_custom_updated 1
+	fi
+
+	# Update cache
+	while [ -d "/proc/$PID4/fd" ] || [ -d "/proc/$PID6/fd" ]; do
+		read -r EVENT RESULT DATA < "$LOCKFILE"
+		case "$EVENT" in
+			'ipv4') [ "$CACHE_IPV4" != "$DATA" ] && [ "$RESULT" = '1' ] && ddns_cache_set -4 "$DATA";;
+			'ipv6') [ "$CACHE_IPV6" != "$DATA" ] && [ "$RESULT" = '1' ] && ddns_cache_set -6 "$DATA";;
+		esac
+	done
+) &
+wait
