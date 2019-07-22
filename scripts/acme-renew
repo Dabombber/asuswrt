@@ -1,0 +1,40 @@
+#!/bin/sh
+
+logger -t 'acme' "running renew script ($0)"
+
+# Restart WebGUI
+service restart_httpd
+
+# Restart nginx
+[ -x '/opt/etc/init.d/S80nginx' ] && /opt/etc/init.d/S80nginx restart
+
+# Update Printer
+DOMAIN='epson.lan'
+CERTFILE='/jffs/.cert/cert.pem'
+KEYFILE='/jffs/.cert/key.pem'
+
+
+# Grab the IP manually just in case local resolution is off
+IP="$(nslookup "$DOMAIN" '127.0.0.1' | awk 'NR>2&&/^Address/{print $(NF==2?2:3);exit}')"
+if ping -q -c 1 -w 1 "$IP" &>/dev/null; then
+	# Switch to self signed so we can delete the CA cert
+	curl -ks -o /dev/null -d 'SEL_SSLTLSUSECERT=SELF-SIGNED_CERT' "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/SET"
+
+	# Wait for printer reboot
+	COUNTER=0
+	LIMIT=10
+	sleep 10
+	while [ -z "$(curl -fks --connect-timeout 5 "https://$IP/PRESENTATION/ADVANCED/COMMON/TOP")" ] && [ $COUNTER -le $LIMIT ]; do
+		sleep 5
+		COUNTER=$((COUNTER + 1))
+	done
+
+	# Delete CA cert
+	curl -ks -o /dev/null "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/CA_DELETE"
+
+	# Upload new CA cert
+	curl -ks -o /dev/null  -F 'format=pem_der' -F "cert0=@$CERTFILE" -F "key=@$KEYFILE" -F 'id=2' "https://$IP/PRESENTATIONEX/CERT/IMPORT_CHAIN"
+
+	# Switch to CA cert
+	curl -ks -o /dev/null -d 'SEL_SSLTLSUSECERT=CA-SIGNED_CERT' "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/SET"
+fi
