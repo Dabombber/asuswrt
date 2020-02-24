@@ -575,6 +575,10 @@ adblock_scripts() {
 			adblock_log 'warning' "Unable to create directory ($ADBLOCK_DIR)"
 			return
 		fi
+		if [ "$(nvram get jffs2_scripts)" != "1" ] ; then
+			nvram set jffs2_scripts=1
+			nvram commit
+		fi
 
 		adblock_log 'debug' "Generating event script (/jffs/scripts/.$ADBLOCK_NAME.event.sh)"
 		local ADBLOCK_ABSDIR ADBLOCK_MOUNT SCRIPT ADBLOCK_ESCNAME
@@ -692,7 +696,7 @@ EOF
 # Enable/disable automatic host updating
 # Usage: adblock_cron disable|[[HOUR|#[:MINUTE|#] [am|pm]] [daily|weekly|WEEKDAY]]
 adblock_cron() {
-	if [ $# -eq 0 ] || [ "${*// /}" = "" ]; then
+	if [ $# -eq 0 ] || [ -z "${*// /}" ]; then
 		return
 	fi
 
