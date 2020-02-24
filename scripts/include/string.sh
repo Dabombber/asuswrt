@@ -34,9 +34,9 @@ string_escape() {
 # Usage _quote [STRING]
 _quote() {
 	if [ $# -gt 0 ]; then
-		awk -v s="$*" 'BEGIN {gsub(/[]\/$*.^&[]/, "\\\\&" , s); gsub(/\n/, "\\n" , s); print s}'
+		awk -v s="$*" 'BEGIN{gsub(/[]\/$*.^&[]/,"\\\\&",s);gsub(/\n+$/,"",s);gsub(/\n/,"\\n",s);print s}'
 	else
-		awk '{gsub(/[]\/$*.^&[]/, "\\\\&");printf (FNR>1)?"\\n%s":"%s",$0}END{print ""}'
+		awk '{gsub(/[]\/$*.^&[]/,"\\\\&");printf (FNR>1)?"\\n%s":"%s",$0}END{print ""}'
 	fi
 }
 

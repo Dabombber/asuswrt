@@ -1,25 +1,25 @@
 # Colour the terminal prompt
 promptme() {
-	local BLACK="\[\e[0;30m\]"
-	local RED="\[\e[0;31m\]"
-	local GREEN="\[\e[0;32m\]"
-	local BROWN="\[\e[0;33m\]"
-	local BLUE="\[\e[0;34m\]"
-	local PURPLE="\[\e[0;35m\]"
-	local CYAN="\[\e[0;36m\]"
-	local LIGHT_GRAY="\[\e[0;37m\]"
+	local BLACK='\[\e[0;30m\]'
+	local RED='\[\e[0;31m\]'
+	local GREEN='\[\e[0;32m\]'
+	local BROWN='\[\e[0;33m\]'
+	local BLUE='\[\e[0;34m\]'
+	local PURPLE='\[\e[0;35m\]'
+	local CYAN='\[\e[0;36m\]'
+	local LIGHT_GRAY='\[\e[0;37m\]'
 
-	local GRAY="\[\e[1;30m\]"
-	local LIGHT_RED="\[\e[1;31m\]"
-	local LIGHT_GREEN="\[\e[1;32m\]"
-	local YELLOW="\[\e[1;33m\]"
-	local LIGHT_BLUE="\[\e[1;34m\]"
-	local LIGHT_PURPLE="\[\e[1;35m\]"
-	local LIGHT_CYAN="\[\e[1;36m\]"
-	local WHITE="\[\e[1;37m\]"
-	local NO_COLOUR="\[\e[m\]"
+	local GRAY='\[\e[1;30m\]'
+	local LIGHT_RED='\[\e[1;31m\]'
+	local LIGHT_GREEN='\[\e[1;32m\]'
+	local YELLOW='\[\e[1;33m\]'
+	local LIGHT_BLUE='\[\e[1;34m\]'
+	local LIGHT_PURPLE='\[\e[1;35m\]'
+	local LIGHT_CYAN='\[\e[1;36m\]'
+	local WHITE='\[\e[1;37m\]'
+	local NO_COLOUR='\[\e[m\]'
 
-    local ARROW=" \[$(printf "\b\xee\x82\xb0")\]"
+    local ARROW=" \\[$(printf '\b\xee\x82\xb0')\\]"
     PS1="\[\e[37;41m\]\u\[\e[31;45m\]$ARROW\[\e[37m\]\h\[\e[m\e[35m\]$ARROW\[\e[m\e[7;34m\]$ARROW\[\e[27;37;44m\]\w\[\e[m\e[34m\]$ARROW\[\e[m\] "
 
 }
@@ -38,24 +38,16 @@ removepath() {
 
 # Remove duplicate PATH entries while maintaining the order
 cleanpath() {
-	PATH="$(printf %s "$PATH" | awk -vRS=: -vORS= '!a[$0]++ {if (NR>1) printf(":"); printf("%s", $0) }' )"
+	PATH="$(printf '%s' "$PATH" | awk -vRS=: -vORS= '!a[$0]++ {if (NR>1) printf(":"); printf("%s", $0) }' )"
 }
 
 # Actually do stuff
 promptme
 cleanpath
-removepath "/home/admin" "/mmc/sbin" "/mmc/bin" "/mmc/usr/sbin" "/mmc/usr/bin" "/opt/usr/sbin" "/opt/usr/bin"
+removepath '/home/admin' '/mmc/sbin' '/mmc/bin' '/mmc/usr/sbin' '/mmc/usr/bin' '/opt/usr/sbin' '/opt/usr/bin'
 
 # Busybox doesn't support .exrc
-export EXINIT="set tabstop=4"
-[ ! -f ~/.nanorc ] && cat > ~/.nanorc <<- EOF
-    set tabsize 4
-	set nowrap
-	set linenumbers
-    include "/jffs/configs/nano/*.nanorc"
-    unbind ^J main
-    bind ^J enter main
-EOF
+export EXINIT='set tabstop=4'
 
 # Unset functions so they don't act like programs
 unset -f promptme

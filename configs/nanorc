@@ -1,0 +1,6 @@
+set tabsize 4
+set nowrap
+set linenumbers
+include "/jffs/configs/nano/*.nanorc"
+unbind ^J main
+bind ^J enter main
