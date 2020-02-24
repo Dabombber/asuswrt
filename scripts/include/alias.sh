@@ -5,7 +5,7 @@
 alias_service() {
 	if [ $# -lt 1 ] || [ "$1" = '-h' ] || [ "$1" = '--help' ]; then
 		echo 'Usage: service [ACTION_]SCRIPT [ARGUMENTS][; ...]'
-		[ -x '/jffs/scripts/include/servicelist.sh' ] && /jffs/scripts/include/servicelist.sh
+		[ -x '/jffs/scripts/include/servicelist.sh' ] && . /jffs/scripts/include/servicelist.sh
 		return
 	fi
 

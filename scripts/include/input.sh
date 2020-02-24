@@ -2,7 +2,7 @@
 # shellcheck shell=ash
 # shellcheck disable=2169
 
-ESC="$(printf "\e")"
+ESC="$(printf '\e')"
 SS3="${ESC}O"
 CSI="${ESC}["
 
@@ -31,12 +31,13 @@ read_key() {
         local _K STDIN
         STDIN="/proc/$$/fd/0"
         :> "$_TEMPFILE"
-        ( IFS= read -rs -n 1 _KEY <"$STDIN"; printf "%s\n" "$_KEY" > "$_TEMPFILE") &
+        ( IFS= read -rs -n 1 _KEY <"$STDIN"; printf '%s\n' "$_KEY" > "$_TEMPFILE" ) &
         local PID_R=$!
-        usleep 10000
-        kill $PID_R 2>/dev/null
+        ( usleep 10000; kill $PID_R 2>/dev/null ) &
+		wait $PID_R
         IFS= read -r _K <"$_TEMPFILE"
         KEY="$KEY$_K"
+		# Need to check for \e\e[X as an alternative to \e[1;3X
         if [ "$_K" = "?" ] || [ "$_K" = "O" ] || [ "$_K" = "[" ] || [ "$_K" = "<" ]; then
             while IFS= read -rs -n 1 -t 1 _K; do
                 if [ "$KEY" = "${CSI}M" ]; then
@@ -49,7 +50,7 @@ read_key() {
             done
         fi
     fi
-    printf "%s" "$KEY"
+    printf '%s' "$KEY"
 }
 
 
@@ -82,16 +83,16 @@ key_name() {
 		MOD=3
 	elif [ "${#KEY}" -eq 1 ]; then
 		# ^key
-		if [ "$(printf "%d" "'$KEY")" -ge 128 ]; then
+		if [ "$(printf '%d' "'$KEY")" -ge 128 ]; then
 			MOD=9
-			KEY="$(printf "%c" $((KEY - 128)))"
+			KEY="$(printf '%c' $((KEY - 128)))"
 		fi
 	elif [ "${#KEY}" -eq 2 ]; then
 		# ESC key
 		KEY="${KEY#?}"
-		if [ "$(printf "%d" "'$KEY")" -ge 128 ]; then
+		if [ "$(printf '%d' "'$KEY")" -ge 128 ]; then
 			MOD=11
-			KEY="$(printf "%c" $((KEY - 128)))"
+			KEY="$(printf '%c' $((KEY - 128)))"
 		else
 			MOD=3
 		fi
@@ -131,7 +132,7 @@ key_name() {
 		MOUSE_X="${BXY#?}"
 		MOUSE_Y=$(("${BXY#??}" - 32))
 		MOUSE_X=$(("${MOUSE_X%?}" - 32))
-		VAL=$(("$(printf "%d" "'${BXY%??}")" - 32))
+		VAL=$(("$(printf '%d' "'${BXY%??}")" - 32))
 		# 0b bb1mmmbb button x2, +32(0b100000) to be printable, modifiers x3, button x2
 		case $(((VAL&28)>>2)) in
 			1) MOD=1;;
@@ -213,7 +214,7 @@ key_name() {
 		"${SS3} "|" ") echo "${MODIFIER}Space";;
 		"${SS3}I"|"	") echo "${MODIFIER}Tab";;
 		"${SS3}M"|"") echo "${MODIFIER}Enter";;
-		"$(printf "\x7F")") echo "${MODIFIER}Backspace" && return;;
+		"$(printf '\x7F')") echo "${MODIFIER}Backspace" && return;;
 
 		# Numpad
 		"${SS3}j") echo "${MODIFIER}*";;
@@ -265,11 +266,11 @@ key_code() {
 	local KEY="${1:-"$(test -t 0 || cat)"}"
 	KEY="${KEY//$ESC/\\e}"
 	local END="${KEY#"${KEY%?}"}" VAL
-	VAL="$(printf "%d" "'$END")"
+	VAL="$(printf '%d' "'$END")"
 	if [ "$VAL" -ge 128 ]; then
-		KEY="${KEY%"$END"}^$(printf "%c" $((VAL - 128)))"
+		KEY="${KEY%"$END"}^$(printf '%c' $((VAL - 128)))"
 	fi
-	printf "%s" "$KEY"
+	printf '%s' "$KEY"
 }
 
 
@@ -286,7 +287,7 @@ select_option() {
 			fi
 			IDX=$((IDX+1))
 		done
-		printf "\r%s" "$LINE" >"$(tty)"
+		printf '\r%s' "$LINE" >"$(tty)"
 		# shellcheck disable=SC2119
 		case "$(read_key | key_name)" in
 			"Enter") break;;
@@ -301,15 +302,15 @@ select_option() {
 		esac
 	done
 
-	printf "%s\n" "$CURSOR_SHOW" >"$(tty)"
+	printf '%s\n' "$CURSOR_SHOW" >"$(tty)"
 	while [ "$SELECT" -ne 1 ]; do shift; SELECT=$((SELECT-1)); done
 	echo "$1"
 }
 
 
-#select_option "Number:" "one" "two" "three"
+#select_option 'Number:' 'one' 'two' 'three'
 
 
 #while :; do
-#	printf "%s\n" "$(read_key | key_name -m))"
+#	printf '%s\n' "$(read_key | key_name -m)"
 #done

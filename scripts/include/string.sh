@@ -7,7 +7,7 @@ readonly _NL='
 '
 
 # Escape a string for use in quotes or a regular expression
-# Usage string_escape [s|single|d|double|e|extended|b|basic]
+# Usage: string_escape [s|single|d|double|e|extended|b|basic]
 string_escape() {
 	case "$1" in
 		# Single quoted string: '
@@ -21,29 +21,25 @@ string_escape() {
 		;;
 		# Extended regular expression: ])}|\/$*+?.^&{([
 		'e'|'extended')
-			sed 's/[])}|\/$*+?.^&{([]/\\&/g'
+			sed -e 's/[])}|\/$*+?.^&{([]/\\&/g' -e '$!s/$/\\n/' | tr -d '\n'
 		;;
 		# Basic regular expression: ]\/$*.^&[
 		'b'|'basic'|*)
-			sed 's/[]\/$*.^&[]/\\&/g'
+			sed -e 's/[]\/$*.^&[]/\\&/g' -e '$!s/$/\\n/' | tr -d '\n'
 		;;
 	esac
 }
 
 # Quote strings suitable for use with sed
-# Usage _quote [STRING]
+# Usage: _quote STRING
 _quote() {
-	if [ $# -gt 0 ]; then
-		awk -v s="$*" 'BEGIN{gsub(/[]\/$*.^&[]/,"\\\\&",s);gsub(/\n+$/,"",s);gsub(/\n/,"\\n",s);print s}'
-	else
-		awk '{gsub(/[]\/$*.^&[]/,"\\\\&");printf (FNR>1)?"\\n%s":"%s",$0}END{print ""}'
-	fi
+	printf '%s\n' "$1" | string_escape
 }
 
 # This function looks for a substring in a string
 # Usage: str_contains STRING SEARCH
 str_contains() {
-        [ ${#2} -eq 0 ] || [ "$1" != "${1#*"$2"}" ]
+	[ ${#2} -eq 0 ] || [ "$1" != "${1#*"$2"}" ]
 }
 
 # A random hex string
