@@ -1,0 +1,16 @@
+#!/bin/sh
+
+if [ "$1" = 'start' ]; then
+	case "$2" in
+		'firewall')
+			sleep 5
+			service start_firewall
+		;;
+		'dhcp6c')
+			sleep 30
+			if [ -z "$(ps | awk '$5=="odhcp6c"')" ]; then
+				service start_dhcp6c
+			fi
+		;;
+	esac
+fi
