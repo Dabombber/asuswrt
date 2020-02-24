@@ -8,8 +8,114 @@ ALLOWED_FILESYSTEMS='ext2|ext3|ext4|tfat|exfat'
 
 # Defaults
 DEFAULT_SWAP_SIZE="$(sed -n 's/^MemTotal:[ ]*\([^ ]*\) kB$/\1/p' /proc/meminfo)"
-DEFAULT_SWAP_PATH="$(mount | sed -n "s/^\/dev\/sda. on \([^ ]*\) type \(${ALLOWED_FILESYSTEMS//|/\\|}\) .*\$/\1/p;T;q")"
+DEFAULT_SWAP_PATH="$(mount | sed -n "s/^[^ ]* on \(\/tmp\/mnt\/[^ ]*\) type \(${ALLOWED_FILESYSTEMS//|/\\|}\) .*[(,]rw[,)].*\$/\1/p;T;q")"
 DEFAULT_SWAP_FILE='.swapfile.swp'
+
+
+# Installs the event script for swap files
+# Usage: swap_scripts enable|disable
+swap_scripts() {
+	if [ "$1" = 'disable' ]; then
+		local SCRIPT
+		for SCRIPT in post-mount unmount; do
+			if [ -f "/jffs/scripts/$SCRIPT" ]; then
+				# Remove swap line
+				sed -i "/## swap files ##/d" "/jffs/scripts/$SCRIPT"
+				# Remove scripts which do nothing
+				[ "$(grep -csvE '^[[:space:]]*(#|$)' "/jffs/scripts/$SCRIPT")" = '0' ] && rm -f "/jffs/scripts/$SCRIPT"
+			fi
+		done
+		# Remove event script
+		rm -f /jffs/scripts/.swap.event.sh
+	elif [ "$1" = 'enable' ]; then
+		# Check userscripts are enabled
+		if [ "$(nvram get jffs2_scripts)" != "1" ] ; then
+			nvram set jffs2_scripts=1
+			nvram commit
+		fi
+
+		# Create event script
+		[ ! -x '/jffs/scripts/.swap.event.sh' ] && cat >/jffs/scripts/.swap.event.sh <<'EOF'
+#!/bin/sh
+
+SCRIPT="$1"
+SWAPPATH="$2"
+
+set --
+
+update_script() {
+	printf '#!/bin/sh\n\nSCRIPT="$1"\nSWAPPATH="$2"\n\n%s\n\n%s\n' "$1" "$(tail -n51 /jffs/scripts/.swap.event.sh)" >/tmp/.swap.event.sh
+	mv -f /tmp/.swap.event.sh /jffs/scripts/.swap.event.sh
+	chmod +x /jffs/scripts/.swap.event.sh
+}
+
+case "$SCRIPT" in
+	'post-mount')
+		for SWAPFILE in "$@"; do
+			if [ -n "$SWAPFILE" ] && [ "${SWAPFILE#"$SWAPPATH/"}" != "$SWAPFILE" ] && [ -f "$SWAPFILE" ]; then
+				swapon "$SWAPFILE"
+			fi
+		done
+	;;
+	'unmount')
+		for SWAPFILE in "$@"; do
+			if [ -n "$SWAPFILE" ] && [ "${SWAPFILE#"$SWAPPATH/"}" != "$SWAPFILE" ] && tail -n+2 /proc/swaps | grep -q "^$(printf '%s\n' "$SWAPFILE" | sed 's/[]\/$*.^&[]/\\&/g') "; then
+				swapoff "$SWAPFILE" || swapoff -a;
+			fi
+		done
+	;;
+	'add')
+		SWAPS='set --'
+		UPDATE='true'
+		for SWAPFILE in "$@"; do
+			if [ "$SWAPFILE" = "$SWAPPATH" ]; then
+				UPDATE='false'
+				break
+			fi
+			SWAPS="$SWAPS '${SWAPFILE//'/'\\''}'"
+		done
+
+		if [ "$UPDATE" = 'true' ]; then
+			SWAPS="$SWAPS '${SWAPPATH//'/'\\''}'"
+			update_script "$SWAPS"
+		else
+			false
+		fi
+	;;
+	'remove')
+		SWAPS='set --'
+		UPDATE='false'
+		for SWAPFILE in "$@"; do
+			if [ "$SWAPFILE" = "$SWAPPATH" ]; then
+				UPDATE='true'
+			else
+				SWAPS="$SWAPS '${SWAPFILE//'/'\\''}'"
+			fi
+		done
+
+		if [ "$UPDATE" = 'true' ]; then
+			update_script "$SWAPS"
+		else
+			false
+		fi
+	;;
+esac
+EOF
+		chmod +x /jffs/scripts/.swap.event.sh
+
+		# Add event triggers
+		local SCRIPT
+		for SCRIPT in post-mount unmount; do
+			if [ ! -f "/jffs/scripts/$SCRIPT" ]; then
+				printf '#!/bin/sh\n\n. /jffs/scripts/.swap.event.sh %s "$@" ## swap files ##\n' "$SCRIPT" > "/jffs/scripts/$SCRIPT"
+				chmod +x "/jffs/scripts/$SCRIPT"
+			elif ! grep -qF '## swap files ##' "/jffs/scripts/$SCRIPT"; then
+				printf '. /jffs/scripts/.swap.event.sh %s "$@" ## swap files ##\n' "$SCRIPT" >> "/jffs/scripts/$SCRIPT"
+			fi
+		done
+	fi
+}
+
 
 # Creates and mounts a swap file
 # Usage: swap_create [SIZE] [DIRECTORY] [FILENAME]
@@ -76,12 +182,12 @@ swap_create() {
 	fi
 	# Get the real path
 	SWAP_PATH="$(readlink -f -- "$SWAP_PATH")"
-	local FILE_SYSTEM FILE_CAPACITY FILE_MOUNT
-	read -r _ FILE_SYSTEM _ _ FILE_CAPACITY _ FILE_MOUNT <<- EOF
+	local FILE_SYSTEM FILE_CAPACITY
+	read -r _ FILE_SYSTEM _ _ FILE_CAPACITY _ <<- EOF
 		$(df -T "$SWAP_PATH" | tail -n1)
 	EOF
 	if ! printf '%s\n' "$FILE_SYSTEM" | grep -qE "$ALLOWED_FILESYSTEMS"; then
-		echo "Invalid path filesystem ($FILE_SYSTEM)" >&2
+		echo "Invalid filesystem for path ($FILE_SYSTEM)" >&2
 		return
 	fi
 	if [ "$FILE_CAPACITY" -le "$SWAP_SIZE" ]; then
@@ -109,76 +215,47 @@ swap_create() {
 
 	echo "Swap file created ($SWAP_PATH/$SWAP_FILE)"
 
-	# Setup automatic (un)mounting
-	if [ ! -f '/jffs/scripts/post-mount' ]; then
-		printf '#!/bin/sh\n\n' > '/jffs/scripts/post-mount'
-		chmod +x '/jffs/scripts/post-mount'
-	fi
-	if [ ! -f '/jffs/scripts/unmount' ]; then
-		printf '#!/bin/sh\n\n' > '/jffs/scripts/unmount'
-		chmod +x '/jffs/scripts/unmount'
-	fi
-	echo "[ \"\$1\" = '${FILE_MOUNT//'/'\\''}' ] && swapon '${SWAP_PATH//'/'\\''}/${SWAP_FILE//'/'\\''}' ## swap file ##" >> '/jffs/scripts/post-mount'
-	echo "[ \"\$1\" = '${FILE_MOUNT//'/'\\''}' ] && swapoff '${SWAP_PATH//'/'\\''}/${SWAP_FILE//'/'\\''}' ## swap file ##" >> '/jffs/scripts/unmount'
+	# Add to list of automounted swap files
+	swap_script install
+	/jffs/scripts/.swap.event.sh add "$SWAP_PATH/$SWAP_FILE"
 }
 
-# Deletes the specified or last found swap file
-# Usage: swap_delete [FILEPATH|FILENAME]
+# Unmounts,deletes and/or removes from autostart the specified swap file
+# Usage: swap_delete FILEPATH
 swap_delete() {
-	if [ "$(wc -l < /proc/swaps)" -le 1 ]; then
-		echo 'No swap file currently enabled' >&2
-		return
-	fi
-	local SWAP_FILEPATH SWAP_TYPE
-	if [ -n "$1" ]; then
-		read -r SWAP_FILEPATH SWAP_TYPE _ <<- EOF
-			$(tail -n+2 /proc/swaps | grep -e "^${1//\\/\\\\} " -e "^[^ ]*/${1//\\/\\\\} ")
-		EOF
+	[ -z "$1" ] && return
 
-		if [ -z "$SWAP_FILEPATH" ]; then
-			echo "Swap file not found ($1)" >&2
+	local SWAP_TYPE
+	SWAP_TYPE="$(awk -v s="$1" 'NR>1&&index($0,s" ")==1{print $(NF-3)}' /proc/swaps)"
+
+	# Unmount
+	if [ -n "$SWAP_TYPE" ]; then
+		if [ "$SWAP_TYPE" != 'file' ]; then
+			echo "Swap is a $SWAP_TYPE, not a file ($1)" >&2
 			return
 		fi
-	else
-		read -r SWAP_FILEPATH SWAP_TYPE _ <<- EOF
-			$(tail -n1 /proc/swaps)
-		EOF
-	fi
 
-	if [ "$SWAP_TYPE" != 'file' ]; then
-		echo "Swap is a $SWAP_TYPE, not a file ($SWAP_FILEPATH)" >&2
-		return
+		if ! swapoff "$1"; then
+			echo "Swap unmount failed ($1)" >&2
+			return
+		fi
+		echo "Swap file unmounted ($1)" >&2
 	fi
 
 	# Remove file
-	if ! swapoff "$SWAP_FILEPATH"; then
-		echo "Swap unmount failed ($SWAP_FILEPATH)" >&2
-		return
-	fi
-	if ! rm -f "$SWAP_FILEPATH"; then
-		echo "Swap deletion failed ($SWAP_FILEPATH)" >&2
-		return
+	if [ -f "$1" ]; then
+		if ! rm -f "$1"; then
+			echo "Swap deletion failed ($1)" >&2
+			return
+		fi
+		echo "Swap file deleted ($1)"
 	fi
 
-	echo "Swap file deleted ($SWAP_FILEPATH)"
-
-	# Escape single quotes and quote for use with sed
-	SWAP_FILEPATH="$(printf '%s\n' "${1//'/'\\''}" | sed 's/[]\/$*.^&[]/\\&/g')"
-
-	if [ -f '/jffs/scripts/post-mount' ]; then
-		# Clean up mount scripts
-		sed -i -e "/swapon '$SWAP_FILEPATH' ## swap file ##/d" -e "/swapon $SWAP_FILEPATH # Swap file created by Diversion/d" '/jffs/scripts/post-mount'
-		# Remove scripts which do nothing
-		[ "$(grep -csvE '^[[:space:]]*(#|$)' '/jffs/scripts/post-mount')" = '0' ] && rm -f '/jffs/scripts/post-mount'
-	fi
-	if [ -f '/jffs/scripts/unmount' ]; then
-		# Clean up unmount scripts
-		sed -i -e "/swapoff '$SWAP_FILEPATH' ## swap file ##/d" -e "/swapoff \$1\/${SWAP_FILEPATH##*/} # Added by Diversion/d" '/jffs/scripts/unmount'
-		# Remove scripts which do nothing
-		[ "$(grep -csvE '^[[:space:]]*(#|$)' '/jffs/scripts/unmount')" = '0' ] && rm -f '/jffs/scripts/unmount'
+	# Remove from list of automounted swap files
+	if [ -x '/jffs/scripts/.swap.event.sh' ] && /jffs/scripts/.swap.event.sh remove "$1"; then
+		echo "Swap file automount removed ($1)"
 	fi
 }
-
 
 case "$1" in
 	'create')
