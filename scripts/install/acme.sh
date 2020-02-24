@@ -26,6 +26,12 @@ acme_scripts() {
 		# Remove event script
 		rm -f '/jffs/scripts/.acme.event.sh'
 	elif [ "$1" = 'enable' ]; then
+		# Check userscripts are enabled
+		if [ "$(nvram get jffs2_scripts)" != "1" ] ; then
+			nvram set jffs2_scripts=1
+			nvram commit
+		fi
+
 		# Create event script
 		local ACME_ABSDIR ACME_MINUTE
 		ACME_ABSDIR="$(readlink -f -- "$ACME_DIRECTORY")"
