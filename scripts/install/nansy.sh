@@ -17,7 +17,7 @@ else
 		IFS=' .' read -r MAJOR MINOR _ <<-EOF
 			$(nano -V | awk 'NR==1{print $NF}')
 		EOF
-		[ -f /jffs/configs/nano/sh.nanorc ] && ! grep -qF '/jffs/configs/profile.add' /jffs/configs/nano/sh.nanorc && sed -i 's/^\(syntax sh .*\))\$"$/\1|\/jffs\/configs\/profile\\\.add)\$"/' /jffs/configs/nano/sh.nanorc
+		[ -f /jffs/configs/nano/sh.nanorc ] && ! grep -qF '/jffs/configs/profile\.add' /jffs/configs/nano/sh.nanorc && sed -i 's/^\(syntax sh .*\))\$"$/\1|\/jffs\/configs\/profile\\\.add)\$"/' /jffs/configs/nano/sh.nanorc
 		if [ $((${MAJOR:-0} * 100 + ${MINOR:-0})) -lt 406 ]; then
 			sed -i 's/^formatter/#formatter/' /jffs/configs/nano/*
 		fi
