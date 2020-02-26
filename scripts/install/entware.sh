@@ -233,7 +233,7 @@ entware_clean() {
 		#  sleep 1
 		#done
 		#$RC start
-		sed -i "/^$(sed_quote "RC='/opt/etc/init.d/rc.unslung'")$/,/^$(sed_quote "\$RC start")$/d" '/jffs/scripts/services-start'
+		sed -i "/^$(sed_quote "RC='/opt/etc/init.d/rc.unslung'")$/bx;b;:x;N;/^$(sed_quote "\$RC start")$/d;bx" '/jffs/scripts/services-start'
 	fi
 
 	if [ -f '/jffs/scripts/services-stop' ]; then
