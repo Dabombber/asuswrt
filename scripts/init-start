@@ -42,15 +42,13 @@ if ! mount | grep -Fq '/www/notification.js'; then
 fi
 
 # Monitor skipped events
-(
-	tail -n0 -F '/tmp/syslog.log' | while read -r LINE; do
-		if [ "${LINE:16:27}" = 'rc_service: skip the event:' ]; then
-			if [ -x '/jffs/scripts/service-event-skip' ]; then
-				EVENT="${LINE:44}"
-				EVENT="${EVENT%.}"
-				logger "custom_script: Running /jffs/scripts/service-event-skip (args: ${EVENT%%_*} ${EVENT#*_})"
-				/jffs/scripts/service-event-skip "${EVENT%%_*}" "${EVENT#*_}" &
-			fi
+tail -n0 -F '/tmp/syslog.log' | while read -r LINE; do
+	if [ "${LINE:16:27}" = 'rc_service: skip the event:' ]; then
+		if [ -x '/jffs/scripts/service-event-skip' ]; then
+			EVENT="${LINE:44}"
+			EVENT="${EVENT%.}"
+			logger "custom_script: Running /jffs/scripts/service-event-skip (args: ${EVENT%%_*} ${EVENT#*_})"
+			/jffs/scripts/service-event-skip "${EVENT%%_*}" "${EVENT#*_}" &
 		fi
-	done
-) &
+	fi
+done &
