@@ -9,9 +9,9 @@ alias_service() {
 		return
 	fi
 
-	local PASS=""
+	local LINE
 	if [ -x '/opt/bin/find' ]; then
-		local CMDLIST LINE
+		local CMDLIST PASS=""
 		if ! CMDLIST="$(. /jffs/scripts/include/string.sh; str_token "$*")"; then return 1; fi
 		while read -r LINE
 		do
@@ -35,14 +35,14 @@ alias_service() {
 					case \"\$(grep -F 'ENABLED=' \"\$1\")\" in
 						*\"ENABLED=\$VAL\"*)
 							echo \"\${1#./S??} is already \${2}d\" > /proc/$$/fd/2
-							;;
+						;;
 						*'ENABLED='*)
 							sed -i \"s/ENABLED=[:alnum:]*/ENABLED=\$VAL/\" \"\$1\"
 							echo \"\${1#./S??} has been \${2}d\" > /proc/$$/fd/1
-							;;
+						;;
 						*)
 							echo \"Unable to \$2 \${1#./S??}, incompatible init.d file\" > /proc/$$/fd/2
-							;;
+						;;
 					esac
 				elif grep -Fq 'ENABLED=no' \"\$1\"; then
 					echo \"\${1#./S??} is disabled, unable to \$2\" > /proc/$$/fd/2;
@@ -55,12 +55,33 @@ alias_service() {
 		done <<- EOF
 			$CMDLIST
 		EOF
+		[ -z "$PASS" ] && return
+		set -- "${PASS#;}"
+	fi
 
-		if [ -n "$PASS" ]; then
-			/sbin/service "${PASS#;}"
-		fi
+	# Make sure no temp files stick around
+	trap '{ rm -f "/tmp/.service$$.log" "/tmp/.service$$.fifo"; exit; }' EXIT INT TERM
+
+	# Prepare to grab errors, can't just tail|grep since we need the tail pid
+	mknod "/tmp/.service$$.fifo" p
+	tail -n0 -F /tmp/syslog.log >"/tmp/.service$$.fifo" &
+	local PID=$!
+	grep --line-buffered '^... .. ..:..:.. rc: received unrecognized event: ' <"/tmp/.service$$.fifo" >"/tmp/.service$$.log" &
+
+	# Send command, usleep 500000 is too short for logs to show
+	/sbin/service "$@" >/dev/null
+	sleep 1
+
+	# Cleanup, grep will kill itself
+	kill $PID 2>/dev/null
+
+	# Check for errors
+	if [ -s "/tmp/.service$$.log" ]; then
+		while read -r LINE; do
+			echo "Unrecognized event: ${LINE:49}" >&2
+		done <"/tmp/.service$$.log"
 	else
-		/sbin/service "$@"
+		echo 'Done.'
 	fi
 }
 
@@ -78,14 +99,14 @@ alias_enable() {
 				case \"\$(grep -F 'ENABLED=' \"\$1\")\" in
 					*'ENABLED=yes'*)
 						echo \"\${1#./S??} is already enabled\" > /proc/$$/fd/2
-						;;
+					;;
 					*'ENABLED='*)
 						sed -i 's/ENABLED=.*/ENABLED=yes/' \"\$1\"
 						echo \"\${1#./S??} has been disabled\" > /proc/$$/fd/1
-						;;
+					;;
 					*)
 						echo \"Unable to enable \${1#./S??}, incompatible init.d file\" > /proc/$$/fd/2
-						;;
+					;;
 				esac
 			" _ "{}" \;)" ]; then
 				echo "Unable to find service: $SERVICE" >&2
@@ -111,13 +132,13 @@ alias_disable() {
 					*'ENABLED=yes'*)
 						sed -i 's/ENABLED=yes/ENABLED=no/' \"\$1\"
 						echo \"\${1#./S??} has been disabled\" > /proc/$$/fd/1
-						;;
+					;;
 					*'ENABLED='*)
 						echo \"\${1#./S??} is already disabled\" > /proc/$$/fd/2
-						;;
+					;;
 					*)
 						echo \"Unable to disable \${1#./S??}, incompatible init.d file\" > /proc/$$/fd/2
-						;;
+					;;
 				esac
 			" _ "{}" \;)" ]; then
 				echo "Unable to find service: $SERVICE" >&2
@@ -207,3 +228,13 @@ alias_opkg() {
 		/opt/bin/opkg "$@"
 	fi
 }
+
+case "$1" in
+	'service') shift && alias_service "$@";;
+	'enable') shift && alias_enable "$@";;
+	'disable') shift && alias_disable "$@";;
+	'restart') shift && alias_restart "$@";;
+	'start') shift && alias_start "$@";;
+	'stop') shift && alias_stop "$@";;
+	'opkg') shift && alias_opkg "$@";;
+esac

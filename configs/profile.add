@@ -60,10 +60,10 @@ unset CHECK_OPT_PATH 2>/dev/null
 unset -f is_substring 2>/dev/null
 
 # Alias builtin commands
-service() {(. /jffs/scripts/include/alias.sh; alias_service "$@")}
-enable() {(. /jffs/scripts/include/alias.sh; alias_enable "$@")}
-disable() {(. /jffs/scripts/include/alias.sh; alias_disable "$@")}
-start() {(. /jffs/scripts/include/alias.sh; alias_start "$@")}
-stop() {(. /jffs/scripts/include/alias.sh; alias_stop "$@")}
-restart() {(. /jffs/scripts/include/alias.sh; alias_restart "$@")}
-opkg() {(. /jffs/scripts/include/alias.sh; alias_opkg "$@")}
+service() { /jffs/scripts/alias.sh service "$@"; }
+enable() { /jffs/scripts/alias.sh enable "$@"; }
+disable() { /jffs/scripts/alias.sh disable "$@"; }
+start() { /jffs/scripts/alias.sh start "$@"; }
+stop() { /jffs/scripts/alias.sh stop "$@"; }
+restart() { /jffs/scripts/alias.sh restart "$@"; }
+opkg() { /jffs/scripts/alias.sh opkg "$@"; }
