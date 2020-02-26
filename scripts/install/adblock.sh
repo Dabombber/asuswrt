@@ -581,11 +581,11 @@ adblock_scripts() {
 		fi
 
 		adblock_log 'debug' "Generating event script (/jffs/scripts/.$ADBLOCK_NAME.event.sh)"
-		local ADBLOCK_ABSDIR ADBLOCK_MOUNT SCRIPT ADBLOCK_ESCNAME
+		local ADBLOCK_ABSDIR ADBLOCK_MOUNT CRONSCRIPT ADBLOCK_ESCNAME
 		ADBLOCK_ABSDIR="$(readlink -f -- "$ADBLOCK_DIR")"
 		ADBLOCK_MOUNT="$(df -T "$ADBLOCK_DIR" | awk 'NR==2 {print $7}')"
-		[ -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ] && SCRIPT="$(grep -o '{ crontab.*$' "/jffs/scripts/.$ADBLOCK_NAME.event.sh")"
-		[ -z "$SCRIPT" ] && SCRIPT='## cron placeholder ##'
+		[ -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ] && CRONSCRIPT="$(grep -o '{ crontab.*$' "/jffs/scripts/.$ADBLOCK_NAME.event.sh")"
+		[ -z "$CRONSCRIPT" ] && CRONSCRIPT='## cron placeholder ##'
 		# There will be written into single quotes so escape them
 		ADBLOCK_ABSDIR="${ADBLOCK_ABSDIR//'/'\\''}"
 		ADBLOCK_MOUNT="${ADBLOCK_MOUNT//'/'\\''}"
@@ -597,8 +597,7 @@ SCRIPT="\$1"
 shift
 case "\$SCRIPT" in
 	'services-start')
-		touch '/tmp/$ADBLOCK_ESCNAME.hosts'
-		$SCRIPT
+		$CRONSCRIPT
 	;;
 	'post-mount')
 		if [ "\$1" = '$ADBLOCK_MOUNT' ]; then
@@ -639,7 +638,8 @@ case "\$SCRIPT" in
 		fi
 	;;
 	'dnsmasq.postconf')
-		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=/tmp/$ADBLOCK_NAME.hosts\n' >> "\$1"
+		[ ! -f '/tmp/$ADBLOCK_ESCNAME.hosts' ] && touch '/tmp/$ADBLOCK_ESCNAME.hosts'
+		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=/tmp/$ADBLOCK_ESCNAME.hosts\n' >> "\$1"
 	;;
 	'cron')
 		if [ -x '$ADBLOCK_ABSDIR/$ADBLOCK_ESCNAME.sh' ]; then
