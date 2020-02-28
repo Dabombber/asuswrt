@@ -502,7 +502,9 @@ adblock_process() {
 			LATEST="$FILE"
 		fi
 	done
-	if [ -f "$ADBLOCK_DIR/hosts" ] && [ -f "$ADBLOCK_DIR/hosts6" ] && [ "$ADBLOCK_DIR/hosts" -nt "$LATEST" ] && { [ ! -f "$ADBLOCK_HOSTS_CONF" ] || [ "$LATEST" -nt "$ADBLOCK_HOSTS_CONF" ]; }; then
+	if [ -f "$ADBLOCK_DIR/hosts" ] && [ -f "$ADBLOCK_DIR/hosts6" ] && [ "$ADBLOCK_DIR/hosts" -nt "$LATEST" ] && {
+		[ ! -f "$ADBLOCK_HOSTS_CONF" ] || [ "$ADBLOCK_DIR/hosts" -nt "$ADBLOCK_HOSTS_CONF" ]
+	}; then
 		adblock_log 'info' "Host list is up to date"
 		false; return $?
 	fi
@@ -753,6 +755,7 @@ adblock_cron() {
 			sed -i 's/{ crontab.*$/## cron placeholder ##/' "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
 		fi
 		crontab -l | grep -v "#$ADBLOCK_NAME update#$" | crontab -
+		[ -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh" ] && chmod -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh"
 		return
 	fi
 
@@ -828,7 +831,7 @@ adblock_cron() {
 	fi
 
 	# copy ourselves to the adblock dir
-	if [ ! -f "$ADBLOCK_DIR/$ADBLOCK_NAME.sh" ]; then
+	if [ ! -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh" ]; then
 		local MYSCRIPT AWKSCRIPT
 		if [ -f "/tmp/.script$$" ] && [ "$(awk 'NR==2{print; exit}' "/tmp/.script$$")" = '### Load config settings' ]; then
 			MYSCRIPT="/tmp/.script$$"
