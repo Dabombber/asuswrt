@@ -162,10 +162,32 @@ is_ipv6() {
 	fi
 }
 
-# Quote strings suitable for use with sed
-# Usage sed_quote STRING
-sed_quote() {
-	printf '%s\n' "$1" | sed 's/[]\/$*.^&[]/\\&/g';
+# Escape a string for use in quotes or a regular expression
+# Usage: string_escape [s|single|d|double|e|extended|b|basic [STRING]]
+string_escape() {
+	[ -n "$2" ] && exec 3<&0 0<<EOARG
+$2
+EOARG
+	case "$1" in
+		# Single quoted string: '
+		's'|'single')
+			sed "s/'/'\\\\''/g"
+			#sed "s/'/'\"'\"'/g"
+		;;
+		# Double quoted string: "\$`
+		'd'|'double')
+			sed 's/["\$`]/\\&/g'
+		;;
+		# Extended regular expression: ])}|\/$*+?.^&{([
+		'e'|'extended')
+			sed -e 's/[])}|\/$*+?.^&{([]/\\&/g' -e '$!s/$/\\n/' | tr -d '\n'
+		;;
+		# Basic regular expression: ]\/$*.^&[
+		'b'|'basic'|*)
+			sed -e 's/[]\/$*.^&[]/\\&/g' -e '$!s/$/\\n/' | tr -d '\n'
+		;;
+	esac
+	[ -n "$2" ] && exec 0<&3 3<&-
 }
 
 # Test if a string is a valid fqdn
@@ -380,7 +402,7 @@ log_priority_value() {
 # Usage: adblock_log [PRIORITY] MESSAGE
 # 	Priorities: debug, info, notice, warning, err, crit, alert, emerg
 # Check for user in main script to allow log messages from subshells
-[ -t 0 ] && { _CONSOLE_TTY="$(tty)" || unset _CONSOLE_TTY; }
+[ -t 0 ] && { _CONSOLE_TTY="$(tty 2>/dev/null)" || unset _CONSOLE_TTY; }
 is_cron_child && _FACILITY='cron' || _FACILITY='user'
 adblock_log() {
 	[ $# -lt 2 ] && set -- 'notice' "$@"
@@ -469,20 +491,25 @@ adblock_process() {
 		adblock_log 'warning' "Unable to create directory ($ADBLOCK_DIR)"
 		false; return $?
 	fi
-	if [ ! -d "$ADBLOCK_HOSTS_DIR" ] || [ -z "$(ls -A "$ADBLOCK_HOSTS_DIR")" ]; then
+	if [ ! -d "$ADBLOCK_HOSTS_DIR" ] || [ -z "$(ls -A -- "$ADBLOCK_HOSTS_DIR")" ]; then
 		adblock_log 'warning' 'No host files to process'
 		false; return $?
 	fi
-	# shellcheck disable=SC2012
-	#    only fields before the first filename are used
-	if [ -f "$ADBLOCK_DIR/hosts" ] && [ -f "$ADBLOCK_DIR/hosts6" ] && [ "$(date -D '%b %e %H:%M:%S %Y' -d "$(ls -lte "$ADBLOCK_HOSTS_DIR" | awk '{print $7" "$8" "$9" "$10; exit}')" '+%s')" -lt "$(date -r "$ADBLOCK_DIR/hosts" '+%s')" ]; then
+
+	local FILE LATEST
+	for FILE in "$ADBLOCK_HOSTS_DIR"/*; do
+		if [ -z "$LATEST" ] || [ "$FILE" -nt "$LATEST" ]; then
+			LATEST="$FILE"
+		fi
+	done
+	if [ -f "$ADBLOCK_DIR/hosts" ] && [ -f "$ADBLOCK_DIR/hosts6" ] && [ "$ADBLOCK_DIR/hosts" -nt "$LATEST" ] && { [ ! -f "$ADBLOCK_HOSTS_CONF" ] || [ "$LATEST" -nt "$ADBLOCK_HOSTS_CONF" ]; }; then
 		adblock_log 'info' "Host list is up to date"
 		false; return $?
 	fi
 
 	[ -f "$ADBLOCK_DIR/list.tmp" ] && rm -f "$ADBLOCK_DIR/list.tmp"
 
-	local FILE WHITELIST
+	local WHITELIST
 	if [ -f "$ADBLOCK_WHITE_FILE" ]; then
 		adblock_log 'debug' "Using whitelist ($ADBLOCK_WHITE_FILE)"
 		WHITELIST="$ADBLOCK_WHITE_LIST$(echo; sed -nE 's/^[[:space:]]*([^[:space:]#]+)[[:space:]]*(#.*)?$/\1/p' "$ADBLOCK_WHITE_FILE")"
@@ -490,11 +517,28 @@ adblock_process() {
 		WHITELIST="$ADBLOCK_WHITE_LIST"
 	fi
 
-	for FILE in "$ADBLOCK_HOSTS_DIR"/*; do
-		if [ -f "$FILE" ]; then
+	if [ -f "$ADBLOCK_HOSTS_CONF" ]; then
+		exec 3<&0 0<"$ADBLOCK_HOSTS_CONF"
+	else
+		adblock_log 'info' 'Hostlist file missing using defaults'
+		exec 3<&0 0<<-EOF
+			$ADBLOCK_HOSTS_LIST
+		EOF
+	fi
+
+	local FIELD_START
+	while read -r FILE _; do
+		# Comment or blank line
+		[ -z "${FILE##"#"*}" ] && continue
+
+		if [ -z "${FILE##*/*}" ]; then
+			adblock_log 'debug' 'No filename listed, generating from URL'
+			FILE="$(generate_filename "$FILE")$ADBLOCK_HOSTS_EXT"
+		fi
+
+		if [ -f "$ADBLOCK_HOSTS_DIR/$FILE" ]; then
 			adblock_log 'debug' "Determining list format ($FILE)"
-			local FIELD_START
-			case "$(get_host_format "$FILE")" in
+			case "$(get_host_format "$ADBLOCK_HOSTS_DIR/$FILE")" in
 				'domains')
 					adblock_log 'info' "Adding entries from domains file ($FILE)"
 					FIELD_START=1
@@ -523,12 +567,17 @@ adblock_process() {
 							print $i
 						}
 					}
-				}' s=$FIELD_START "$FILE" >> "$ADBLOCK_DIR/list.tmp"
+				}' s=$FIELD_START "$ADBLOCK_HOSTS_DIR/$FILE" >> "$ADBLOCK_DIR/list.tmp"
+		else
+			adblock_log 'info' "Skipping missing file ($FILE)"
 		fi
 	done
+	exec 0<&3 3<&-
 
 	if [ ! -s "$ADBLOCK_DIR/list.tmp" ]; then
 		adblock_log 'info' 'No hosts found'
+		: >"$ADBLOCK_DIR/hosts"
+		: >"$ADBLOCK_DIR/hosts6"
 	else
 		adblock_log 'info' 'Removing duplicates and generating host files'
 		sort -u "$ADBLOCK_DIR/list.tmp" | awk '
@@ -581,15 +630,14 @@ adblock_scripts() {
 		fi
 
 		adblock_log 'debug' "Generating event script (/jffs/scripts/.$ADBLOCK_NAME.event.sh)"
-		local ADBLOCK_ABSDIR ADBLOCK_MOUNT CRONSCRIPT ADBLOCK_ESCNAME
-		ADBLOCK_ABSDIR="$(readlink -f -- "$ADBLOCK_DIR")"
-		ADBLOCK_MOUNT="$(df -T "$ADBLOCK_DIR" | awk 'NR==2 {print $7}')"
+		local ADBLOCK_ABSDIR ADBLOCK_ESCDIR ADBLOCK_MOUNT CRONSCRIPT ADBLOCK_ESCNAME
 		[ -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ] && CRONSCRIPT="$(grep -o '{ crontab.*$' "/jffs/scripts/.$ADBLOCK_NAME.event.sh")"
 		[ -z "$CRONSCRIPT" ] && CRONSCRIPT='## cron placeholder ##'
 		# There will be written into single quotes so escape them
-		ADBLOCK_ABSDIR="${ADBLOCK_ABSDIR//'/'\\''}"
-		ADBLOCK_MOUNT="${ADBLOCK_MOUNT//'/'\\''}"
-		ADBLOCK_ESCNAME="${ADBLOCK_NAME//'/'\\''}"
+		ADBLOCK_MOUNT="$(df -T "$ADBLOCK_DIR" | awk 'NR==2 {print $7}' | string_escape s)"
+		ADBLOCK_ABSDIR="$(readlink -f -- "$ADBLOCK_DIR" | string_escape s)"
+		ADBLOCK_ESCDIR="$(string_escape s "$ADBLOCK_DIR")"
+		ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
 		cat > "/jffs/scripts/.$ADBLOCK_NAME.event.sh" << EOF
 #!/bin/sh
 
@@ -639,11 +687,11 @@ case "\$SCRIPT" in
 	;;
 	'dnsmasq.postconf')
 		[ ! -f '/tmp/$ADBLOCK_ESCNAME.hosts' ] && touch '/tmp/$ADBLOCK_ESCNAME.hosts'
-		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=/tmp/$ADBLOCK_ESCNAME.hosts\n' >> "\$1"
+		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=%s\n' '/tmp/$ADBLOCK_ESCNAME.hosts' >> "\$1"
 	;;
 	'cron')
-		if [ -x '$ADBLOCK_ABSDIR/$ADBLOCK_ESCNAME.sh' ]; then
-			'$ADBLOCK_ABSDIR/$ADBLOCK_ESCNAME.sh' update
+		if [ -x '$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' ]; then
+			'$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' update
 		fi
 	;;
 esac
@@ -660,11 +708,10 @@ EOF
 			fi
 		done
 	elif [ "$1" = 'cron' ] && [ ! -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ]; then
-		local ADBLOCK_ABSDIR ADBLOCK_ESCNAME
-		ADBLOCK_ABSDIR="$(readlink -f -- "$ADBLOCK_DIR")"
+		local ADBLOCK_ESCDIR ADBLOCK_ESCNAME
 		# There will be written into single quotes so escape them
-		ADBLOCK_ABSDIR="${ADBLOCK_ABSDIR//'/'\\''}"
-		ADBLOCK_ESCNAME="${ADBLOCK_NAME//'/'\\''}"
+		ADBLOCK_ESCDIR="$(string_escape s "$ADBLOCK_DIR")"
+		ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
 		cat > "/jffs/scripts/.$ADBLOCK_NAME.event.sh" << EOF
 #!/bin/sh
 
@@ -675,8 +722,8 @@ case "\$SCRIPT" in
 		## cron placeholder ##
 	;;
 	'cron')
-		if [ -x '$ADBLOCK_ABSDIR/$ADBLOCK_ESCNAME.sh' ]; then
-			'$ADBLOCK_ABSDIR/$ADBLOCK_ESCNAME.sh' update
+		if [ -x '$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' ]; then
+			'$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' update
 		fi
 	;;
 esac
@@ -801,19 +848,19 @@ adblock_cron() {
 			### Default values
 			###
 
-			DEFAULT_NAME='$(printf '%s\n' "$ADBLOCK_NAME" | sed "s/'/'\\\\''/g")'
-			DEFAULT_DIR='$(printf '%s\n' "$ADBLOCK_DIR" | sed "s/'/'\\\\''/g")'
-			DEFAULT_HOSTS_CONF='$(printf '%s\n' "$ADBLOCK_HOSTS_CONF" | sed "s/'/'\\\\''/g")'
-			DEFAULT_HOSTS_DIR='$(printf '%s\n' "$ADBLOCK_HOSTS_DIR" | sed "s/'/'\\\\''/g")'
-			DEFAULT_HOSTS_EXT='$(printf '%s\n' "$ADBLOCK_HOSTS_EXT" | sed "s/'/'\\\\''/g")'
-			DEFAULT_HOSTS_LIST='$(printf '%s\n' "$ADBLOCK_HOSTS_LIST" | sed "s/'/'\\\\''/g")'
-			DEFAULT_WHITE_FILE='$(printf '%s\n' "$ADBLOCK_WHITE_FILE" | sed "s/'/'\\\\''/g")'
-			DEFAULT_WHITE_LIST='$(printf '%s\n' "$ADBLOCK_WHITE_LIST" | sed "s/'/'\\\\''/g")'
-			DEFAULT_IP4='$(printf '%s\n' "$ADBLOCK_IP4" | sed "s/'/'\\\\''/g")'
-			DEFAULT_IP6='$(printf '%s\n' "$ADBLOCK_IP6" | sed "s/'/'\\\\''/g")'
-			DEFAULT_DPL='$(printf '%s\n' "$ADBLOCK_DPL" | sed "s/'/'\\\\''/g")'
-			DEFAULT_CRON='$(printf '%s\n' "$ADBLOCK_CRON" | sed "s/'/'\\\\''/g")'
-			DEFAULT_LOGLEVEL='$(printf '%s\n' "$ADBLOCK_LOGLEVEL" | sed "s/'/'\\\\''/g")'
+			DEFAULT_NAME='$(string_escape s "$ADBLOCK_NAME")'
+			DEFAULT_DIR='$(string_escape s "$ADBLOCK_DIR")'
+			DEFAULT_HOSTS_CONF='$(string_escape s "$ADBLOCK_HOSTS_CONF")'
+			DEFAULT_HOSTS_DIR='$(string_escape s "$ADBLOCK_HOSTS_DIR")'
+			DEFAULT_HOSTS_EXT='$(string_escape s "$ADBLOCK_HOSTS_EXT")'
+			DEFAULT_HOSTS_LIST='$(string_escape s "$ADBLOCK_HOSTS_LIST")'
+			DEFAULT_WHITE_FILE='$(string_escape s "$ADBLOCK_WHITE_FILE")'
+			DEFAULT_WHITE_LIST='$(string_escape s "$ADBLOCK_WHITE_LIST")'
+			DEFAULT_IP4='$(string_escape s "$ADBLOCK_IP4")'
+			DEFAULT_IP6='$(string_escape s "$ADBLOCK_IP6")'
+			DEFAULT_DPL='$(string_escape s "$ADBLOCK_DPL")'
+			DEFAULT_CRON='$(string_escape s "$ADBLOCK_CRON")'
+			DEFAULT_LOGLEVEL='$(string_escape s "$ADBLOCK_LOGLEVEL")'
 
 
 		EOF
@@ -821,13 +868,14 @@ adblock_cron() {
 	fi
 
 	adblock_log 'info' 'Adding cron job'
-	local LINE
-	LINE="$MINUTE $HOUR * * $DAY '/jffs/scripts/.${ADBLOCK_NAME//'/'\\''}.event.sh' cron"
+	local LINE ADBLOCK_ESCNAME
+	ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
+	LINE="$MINUTE $HOUR * * $DAY '/jffs/scripts/.$ADBLOCK_ESCNAME.event.sh' cron"
 	if [ ! -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ]; then
 		adblock_scripts 'cron'
 	fi
 
-	sed -i "s/## cron placeholder ##\|{ crontab.*$/$(sed_quote "{ crontab -l | grep -v '#${ADBLOCK_NAME//'/'\\''} update#$' ; echo '${LINE//'/'\\''} #${ADBLOCK_NAME//'/'\\''} update#'; } | crontab -")/" "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
+	sed -i "s/## cron placeholder ##\|{ crontab.*$/$(string_escape b "{ crontab -l | grep -v '#$ADBLOCK_ESCNAME update#$' ; echo '$(string_escape s "$LINE") #$ADBLOCK_ESCNAME update#'; } | crontab -")/" "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
 	{ crontab -l | grep -v "#$ADBLOCK_NAME update#$" ; echo "$LINE #$ADBLOCK_NAME update#"; } | crontab -
 }
 

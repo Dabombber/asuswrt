@@ -7,8 +7,11 @@ readonly _NL='
 '
 
 # Escape a string for use in quotes or a regular expression
-# Usage: string_escape [s|single|d|double|e|extended|b|basic]
+# Usage: string_escape [s|single|d|double|e|extended|b|basic [STRING]]
 string_escape() {
+	[ -n "$2" ] && exec 3<&0 0<<EOARG
+$2
+EOARG
 	case "$1" in
 		# Single quoted string: '
 		's'|'single')
@@ -28,12 +31,7 @@ string_escape() {
 			sed -e 's/[]\/$*.^&[]/\\&/g' -e '$!s/$/\\n/' | tr -d '\n'
 		;;
 	esac
-}
-
-# Quote strings suitable for use with sed
-# Usage: _quote STRING
-_quote() {
-	printf '%s\n' "$1" | string_escape
+	[ -n "$2" ] && exec 0<&3 3<&-
 }
 
 # This function looks for a substring in a string
@@ -150,77 +148,77 @@ str_token() {
 # This function looks for a string and replaces it with a different string, from stdin or in a specified file
 # Usage: str_replace SEARCH REPLACE [FILE]
 str_replace() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} "s/$PATTERN/$CONTENT/" ${3+"$3"}
 }
 
 # This function looks for a string and inserts a string before it, from stdin or in a specified file
 # Usage: str_prepend SEARCH INSERT [FILE]
 str_prepend() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} "s/$PATTERN/$CONTENT&/" ${3+"$3"}
 }
 
 # This function looks for a string and inserts a string after it, from stdin or in a specified file
 # Usage: str_append SEARCH INSERT [FILE]
 str_append() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} "s/$PATTERN/&$CONTENT/" ${3+"$3"}
 }
 
 # This function will delete a given string, from stdin or in a specified file
 # Usage: str_delete SEARCH [FILE]
 str_delete() {
-	PATTERN="$(_quote "$1")"
+	PATTERN="$(string_escape b "$1")"
 	sed ${2+-i} "s/$PATTERN//" ${2+"$2"}
 }
 
 # This function looks for a line and replaces it with a specified line, from stdin or in a specified file
 # Usage: line_replace SEARCH REPLACE [FILE]
 line_replace() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} -e "/$PATTERN/c\\" -e "$CONTENT" ${3+"$3"}
 }
 
 # This function looks for a line and replaces it if found or appends if not, from stdin or in a specified file
 # Usage: line_replace SEARCH REPLACE [FILE]
 line_applace() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} "/$PATTERN/{h;s/.*/$CONTENT/};\${x;/^\$/{s//$CONTENT/;H};x}" ${3+"$3"}
 }
 
 # This function looks for a line and inserts a specified line before it, from stdin or in a specified file
 # Usage: line_prepend SEARCH INSERT [FILE]
 line_prepend() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} -e "/$PATTERN/i\\" -e "$CONTENT" ${3+"$3"}
 }
 
 # This function looks for a line and inserts a specified line after it, from stdin or in a specified file
 # Usage: line_append SEARCH INSERT [FILE]
 line_append() {
-	PATTERN="$(_quote "$1")"
-	CONTENT="$(_quote "$2")"
+	PATTERN="$(string_escape b "$1")"
+	CONTENT="$(string_escape b "$2")"
 	sed ${3+-i} -e "/$PATTERN/a\\" -e "$CONTENT" ${3+"$3"}
 }
 
 # This function will delete a line containing a given string, from stdin or in a specified file
 # Usage: line_delete STRING [FILE]
 line_delete() {
-	PATTERN="$(_quote "$1")"
+	PATTERN="$(string_escape b "$1")"
 	sed ${2+-i} "/$PATTERN/d" ${2+"$2"}
 }
 
 # This function will insert a given string at the beginning of a given file
 # Usage: file_prepend INSERT [FILE]
 file_prepend() {
-	CONTENT="$(_quote "$1")"
+	CONTENT="$(string_escape b "$1")"
 	sed ${2+-i} "1s/^/$CONTENT\n/" ${2+"$2"}
 }
 
