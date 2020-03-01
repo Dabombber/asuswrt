@@ -33,7 +33,7 @@ else
 				/jffs/configs/nano/sh.nanorc
 		fi
 		if [ ! -f '/jffs/configs/nanorc' ] || ! grep -qF 'include "/jffs/configs/nano/*.nanorc"' /jffs/configs/nanorc; then
-			echo 'include "/jffs/configs/nano/*.nanorc"' >>/jffs/configs/nanorc
+			echo 'include "/jffs/configs/nano/*.nanorc"' >> /jffs/configs/nanorc
 		fi
 	fi
 fi

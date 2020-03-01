@@ -133,135 +133,91 @@ entware_install() {
 	[ -x '/opt/bin/opkg' ]; return $?
 }
 
+# Add directory user-script entries
+# Usage: directory_scripts DIRECTORY START-SCRIPT KILL-SCRIPT
+directory_scripts() {
+	mkdir -p "/jffs/scripts/$1.d"
+
+	[ ! -x "/jffs/scripts/$2" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$2" && chmod +x "/jffs/scripts/$2"
+	[ ! -x "/jffs/scripts/$3" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$3" && chmod +x "/jffs/scripts/$3"
+
+	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$2"; then
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
+	fi
+	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$3"; then
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
+	fi
+}
+
 # Add user-script entries
 # Usage: entware_scripts [TOGGLE]
 entware_scripts() {
-	local SCRIPT
 	if [ "$1" = 'disable' ]; then
-		for SCRIPT in services-start services-stop post-mount unmount; do
-			if [ -f "/jffs/scripts/$SCRIPT" ]; then
-				# Remove entware line
-				sed -i '/## entware ##/d' "/jffs/scripts/$SCRIPT"
-				# Remove scripts which do nothing
-				[ "$(grep -cvE '^[[:space:]]*(#|$)' "/jffs/scripts/$SCRIPT")" -eq 0 ] && rm -f "/jffs/scripts/$SCRIPT"
-			fi
-		done
-		# Remove event script
-		rm -f '/jffs/scripts/.entware.event.sh'
+		rm -f '/jffs/scripts/services.d/S20entware' '/jffs/scripts/services.d/K80entware' '/jffs/scripts/mount.d/S20entware' '/jffs/scripts/mount.d/K80entware'
 	elif [ "$1" = 'enable' ]; then
 		# Check userscripts are enabled
 		if [ "$(nvram get jffs2_scripts)" != "1" ] ; then
-			echo "Enabling custom scripts and configs from /jffs..."
 			nvram set jffs2_scripts=1
 			nvram commit
 		fi
 
-		# Create event script
-		cat > '/jffs/scripts/.entware.event.sh' << EOF
+		# Add services/mount directory scripts
+		directory_scripts 'services' 'services-start' 'services-stop'
+		directory_scripts 'mount' 'post-mount' 'unmount'
+
+		# Create start/stop scripts
+		cat > '/jffs/scripts/services.d/S20entware' <<'EOF'
 #!/bin/sh
 
-SCRIPT="\$1"
-shift
-case "\$SCRIPT" in
-	'services-start')
-		if [ -d '/tmp/opt' ]; then
-			logger -t "entware[\$\$]" -p 'user.info' 'Starting entware services'
-			/opt/etc/init.d/rc.unslung start "\$0"
-		fi
-		touch '/tmp/.entware.services-start'
-	;;
-	'services-stop')
-		if [ -f '/tmp/.entware.services-start' ]; then
-			rm -f '/tmp/.entware.services-start'
-			if [ -d '/tmp/opt' ]; then
-				logger -t "entware[\$\$]" -p 'user.info' 'Stopping entware services'
-				/opt/etc/init.d/rc.unslung stop "\$0"
-			fi
-		fi
-	;;
-	'post-mount')
-		if [ ! -d '/tmp/opt' ] && [ -d "\$1/entware" ]; then
-			ln -nsf "\$1/entware" '/tmp/opt'
+if [ -d '/tmp/opt' ]; then
+	logger -t "entware[$$]" -p 'user.info' 'Starting entware services'
+	/opt/etc/init.d/rc.unslung start "$0"
+fi
+touch '/tmp/.entware.services-start'
+EOF
+		cat > '/jffs/scripts/services.d/K80entware' <<'EOF'
+#!/bin/sh
+
+if [ -f '/tmp/.entware.services-start' ]; then
+	rm -f '/tmp/.entware.services-start'
+	if [ -d '/tmp/opt' ]; then
+		logger -t "entware[$$]" -p 'user.info' 'Stopping entware services'
+		/opt/etc/init.d/rc.unslung stop "$0"
+	fi
+fi
+EOF
+		cat > '/jffs/scripts/mount.d/S20entware' <<'EOF'
+#!/bin/sh
+
+if [ ! -d '/tmp/opt' ] && [ -d "$1/entware" ]; then
+	ln -nsf "$1/entware" '/tmp/opt'
+	if [ -f '/tmp/.entware.services-start' ]; then
+		logger -t "entware[$$]" -p 'user.info' 'Starting entware services'
+		/opt/etc/init.d/rc.unslung start "$0"
+	fi
+fi
+EOF
+		cat > '/jffs/scripts/mount.d/K80entware' <<'EOF'
+#!/bin/sh
+
+		if [ "$(readlink -f -- '/tmp/opt')" = "$1/entware" ]; then
 			if [ -f '/tmp/.entware.services-start' ]; then
-				logger -t "entware[\$\$]" -p 'user.info' 'Starting entware services'
-				/opt/etc/init.d/rc.unslung start "\$0"
-			fi
-		fi
-	;;
-	'unmount')
-		if [ "\$(readlink -f -- '/tmp/opt')" = "\$1/entware" ]; then
-			if [ -f '/tmp/.entware.services-start' ]; then
-				logger -t "entware[\$\$]" -p 'user.info' 'Stopping entware services'
-				/opt/etc/init.d/rc.unslung stop "\$0"
+				logger -t "entware[$$]" -p 'user.info' 'Stopping entware services'
+				/opt/etc/init.d/rc.unslung stop "$0"
 			fi
 			rm -f '/tmp/opt'
 		fi
-	;;
-esac
 EOF
-		chmod +x '/jffs/scripts/.entware.event.sh'
-
-		# Add event triggers
-		for SCRIPT in services-start services-stop post-mount unmount; do
-			if [ ! -f "/jffs/scripts/$SCRIPT" ]; then
-				printf '#!/bin/sh\n\n. /jffs/scripts/.entware.event.sh %s "$@" ## entware ##\n' "$SCRIPT" > "/jffs/scripts/$SCRIPT"
-				chmod +x "/jffs/scripts/$SCRIPT"
-			elif ! grep -Fq '## entware ##' "/jffs/scripts/$SCRIPT"; then
-				printf '. /jffs/scripts/.entware.event.sh %s "$@" ## entware ##\n' "$SCRIPT" >> "/jffs/scripts/$SCRIPT"
-			fi
-		done
+		chmod +x '/jffs/scripts/services.d/S20entware' '/jffs/scripts/services.d/K80entware' '/jffs/scripts/mount.d/S20entware' '/jffs/scripts/mount.d/K80entware'
 	fi
-}
-
-# Remove entware-setup.sh/diversion/amtm additions
-# Usage: entware_clean
-entware_clean() {
-	# Quote strings suitable for use with sed
-	# Usage sed_quote STRING
-	sed_quote() { printf '%s\n' "$1" | sed 's/[]\/$*.^&[]/\\&/g'; }
-
-	if [ -f '/jffs/scripts/services-start' ]; then
-		#RC='/opt/etc/init.d/rc.unslung'
-		#
-		#i=30
-		#until [ -x "$RC" ] ; do
-		#  i=$(($i-1))
-		#  if [ "$i" -lt 1 ] ; then
-		#    logger "Could not start Entware"
-		#    exit
-		#  fi
-		#  sleep 1
-		#done
-		#$RC start
-		sed -ni "/^$(sed_quote "RC='/opt/etc/init.d/rc.unslung'")$/{h;bx;};p;b;:x;n;/^$(sed_quote "\$RC start")$/d;H;\${x;p};bx" '/jffs/scripts/services-start'
-	fi
-
-	if [ -f '/jffs/scripts/services-stop' ]; then
-		#/opt/etc/init.d/rc.unslung stop [# Added by XXX]
-		sed -i "/^$(sed_quote '/opt/etc/init.d/rc.unslung stop')/d" '/jffs/scripts/services-stop'
-	fi
-
-	if [ -f '/jffs/scripts/post-mount' ]; then
-		#if [ -d "$1/entware" ] ; then
-		#  ln -nsf $1/entware /tmp/opt
-		#fi
-		sed -i -e '/\(post-mount\.div\|mount-entware\.div\)/d' -e "/^$(sed_quote "if [ -d \"\$1/entware\" ] ; then")$/,+2d" '/jffs/scripts/post-mount'
-	fi
-
-	# Remove scripts which do nothing
-	local SCRIPT
-	for SCRIPT in services-start services-stop post-mount; do
-		[ "$(grep -csvE '^[[:space:]]*(#|$)' "/jffs/scripts/$SCRIPT")" = '0' ] && rm -f "/jffs/scripts/$SCRIPT"
-	done
 }
 
 case "$1" in
 	'install')
 		shift
-		entware_prepare "$@" && entware_install "$@" && { entware_clean; entware_scripts 'enable'; }
+		entware_prepare "$@" && entware_install "$@" && entware_scripts 'enable'
 	;;
 	'enable')
-		entware_clean
 		entware_scripts 'enable'
 	;;
 	'disable')

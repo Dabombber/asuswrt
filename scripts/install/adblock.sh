@@ -378,6 +378,22 @@ get_host_format() {
 	fi
 }
 
+# Add directory user-script entries
+# Usage: directory_scripts DIRECTORY START-SCRIPT KILL-SCRIPT
+directory_scripts() {
+	mkdir -p "/jffs/scripts/$1.d"
+
+	[ ! -x "/jffs/scripts/$2" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$2" && chmod +x "/jffs/scripts/$2"
+	[ ! -x "/jffs/scripts/$3" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$3" && chmod +x "/jffs/scripts/$3"
+
+	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$2"; then
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
+	fi
+	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$3"; then
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
+	fi
+}
+
 # Get the integer value of a log priority level
 # Usage: log_priority_value LEVEL
 log_priority_value() {
@@ -578,8 +594,8 @@ adblock_process() {
 
 	if [ ! -s "$ADBLOCK_DIR/list.tmp" ]; then
 		adblock_log 'info' 'No hosts found'
-		: >"$ADBLOCK_DIR/hosts"
-		: >"$ADBLOCK_DIR/hosts6"
+		: > "$ADBLOCK_DIR/hosts"
+		: > "$ADBLOCK_DIR/hosts6"
 	else
 		adblock_log 'info' 'Removing duplicates and generating host files'
 		sort -u "$ADBLOCK_DIR/list.tmp" | awk '
@@ -610,17 +626,14 @@ adblock_process() {
 # Usage: adblock_scripts [TOGGLE]
 adblock_scripts() {
 	if [ "$1" = 'disable' ]; then
-		local SCRIPT
-		for SCRIPT in post-mount unmount services-start dnsmasq.postconf; do
-			if [ -f "/jffs/scripts/$SCRIPT" ]; then
-				adblock_log 'debug' "Cleaning up script (/jffs/scripts/$SCRIPT)"
-				sed -i "/## $ADBLOCK_NAME ##/d" "/jffs/scripts/$SCRIPT"
-				if [ "$(grep -cvE '^[[:space:]]*(#|$)' "/jffs/scripts/$SCRIPT")" -eq 0 ]; then
-					rm -f "/jffs/scripts/$SCRIPT"
-				fi
+		adblock_log 'debug' 'Cleaning up jffs scripts'
+		if [ -f "/jffs/scripts/dnsmasq.postconf" ]; then
+			sed -i "/## $(string_escape b "$ADBLOCK_NAME") ##/d" '/jffs/scripts/dnsmasq.postconf'
+			if [ "$(grep -cvE '^[[:space:]]*(#|$)' '/jffs/scripts/dnsmasq.postconf')" -eq 0 ]; then
+				rm -f '/jffs/scripts/dnsmasq.postconf'
 			fi
-		done
-		rm -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
+		fi
+		rm -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" "/jffs/scripts/services.d/S50$ADBLOCK_NAME" "/jffs/scripts/mount.d/S50$ADBLOCK_NAME" "/jffs/scripts/mount.d/K50$ADBLOCK_NAME"
 	elif [ "$1" = 'enable' ]; then
 		if [ ! -d "$ADBLOCK_DIR" ] && ! mkdir -p "$ADBLOCK_DIR"; then
 			adblock_log 'warning' "Unable to create directory ($ADBLOCK_DIR)"
@@ -631,62 +644,65 @@ adblock_scripts() {
 			nvram commit
 		fi
 
-		adblock_log 'debug' "Generating event script (/jffs/scripts/.$ADBLOCK_NAME.event.sh)"
-		local ADBLOCK_ABSDIR ADBLOCK_ESCDIR ADBLOCK_MOUNT CRONSCRIPT ADBLOCK_ESCNAME
-		[ -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ] && CRONSCRIPT="$(grep -o '{ crontab.*$' "/jffs/scripts/.$ADBLOCK_NAME.event.sh")"
-		[ -z "$CRONSCRIPT" ] && CRONSCRIPT='## cron placeholder ##'
+		# Add services/mount directory scripts
+		directory_scripts 'mount' 'post-mount' 'unmount'
+
+		adblock_log 'debug' 'Creating jffs scripts'
+		local ADBLOCK_ABSDIR ADBLOCK_ESCDIR ADBLOCK_MOUNT ADBLOCK_ESCNAME
 		# There will be written into single quotes so escape them
 		ADBLOCK_MOUNT="$(df -T "$ADBLOCK_DIR" | awk 'NR==2 {print $7}' | string_escape s)"
 		ADBLOCK_ABSDIR="$(readlink -f -- "$ADBLOCK_DIR" | string_escape s)"
 		ADBLOCK_ESCDIR="$(string_escape s "$ADBLOCK_DIR")"
 		ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
+
+		cat > "/jffs/scripts/mount.d/S50$ADBLOCK_NAME" << EOF
+#!/bin/sh
+
+if [ "\$1" = '$ADBLOCK_MOUNT' ]; then
+	HOST_LINK=""
+	if [ "\$(nvram get ipv6_service)" != 'disabled' ] && [ -f '$ADBLOCK_ABSDIR/hosts6' ]; then
+		HOST_LINK='$ADBLOCK_ABSDIR/hosts6'
+	elif [ -f '$ADBLOCK_ABSDIR/hosts' ]; then
+		HOST_LINK='$ADBLOCK_ABSDIR/hosts'
+	fi
+	if [ -n "\$HOST_LINK" ]; then
+		read -r UPTIME _ < /proc/uptime
+		if [ "\${UPTIME%.*}" -lt 300 ]; then
+			(
+				sleep 2m
+				if [ -f "\$HOST_LINK" ]; then
+					logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Linking hosts and reloading dnsmasq (delayed)'
+					rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
+					ln -sf "\$HOST_LINK" '/tmp/$ADBLOCK_ESCNAME.hosts'
+					killall -HUP dnsmasq
+				fi
+
+			) &
+		else
+			logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Linking hosts and reloading dnsmasq'
+			rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
+			ln -sf "\$HOST_LINK" '/tmp/$ADBLOCK_ESCNAME.hosts'
+			killall -HUP dnsmasq
+		fi
+	fi
+fi
+EOF
+		cat > "/jffs/scripts/mount.d/K50$ADBLOCK_NAME" << EOF
+#!/bin/sh
+
+if [ "\$1" = '$ADBLOCK_MOUNT' ] && [ -L '/tmp/$ADBLOCK_ESCNAME.hosts' ]; then
+	logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Unlinking hosts and reloading dnsmasq'
+	rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
+	touch '/tmp/$ADBLOCK_ESCNAME.hosts'
+	killall -HUP dnsmasq
+fi
+EOF
 		cat > "/jffs/scripts/.$ADBLOCK_NAME.event.sh" << EOF
 #!/bin/sh
 
 SCRIPT="\$1"
 shift
 case "\$SCRIPT" in
-	'services-start')
-		$CRONSCRIPT
-	;;
-	'post-mount')
-		if [ "\$1" = '$ADBLOCK_MOUNT' ]; then
-			HOST_LINK=""
-			if [ "\$(nvram get ipv6_service)" != 'disabled' ] && [ -f '$ADBLOCK_ABSDIR/hosts6' ]; then
-				HOST_LINK='$ADBLOCK_ABSDIR/hosts6'
-			elif [ -f '$ADBLOCK_ABSDIR/hosts' ]; then
-				HOST_LINK='$ADBLOCK_ABSDIR/hosts'
-			fi
-			if [ -n "\$HOST_LINK" ]; then
-				read -r UPTIME _ < /proc/uptime
-				if [ "\${UPTIME%.*}" -lt 300 ]; then
-					(
-						sleep 2m
-						if [ -f "\$HOST_LINK" ]; then
-							logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Linking hosts and reloading dnsmasq (delayed)'
-							rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
-							ln -sf "\$HOST_LINK" '/tmp/$ADBLOCK_ESCNAME.hosts'
-							killall -HUP dnsmasq
-						fi
-
-					) &
-				else
-					logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Linking hosts and reloading dnsmasq'
-					rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
-					ln -sf "\$HOST_LINK" '/tmp/$ADBLOCK_ESCNAME.hosts'
-					killall -HUP dnsmasq
-				fi
-			fi
-		fi
-	;;
-	'unmount')
-		if [ "\$1" = '$ADBLOCK_MOUNT' ] && [ -L '/tmp/$ADBLOCK_ESCNAME.hosts' ]; then
-			logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Unlinking hosts and reloading dnsmasq'
-			rm -f '/tmp/$ADBLOCK_ESCNAME.hosts'
-			touch '/tmp/$ADBLOCK_ESCNAME.hosts'
-			killall -HUP dnsmasq
-		fi
-	;;
 	'dnsmasq.postconf')
 		[ ! -f '/tmp/$ADBLOCK_ESCNAME.hosts' ] && touch '/tmp/$ADBLOCK_ESCNAME.hosts'
 		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=%s\n' '/tmp/$ADBLOCK_ESCNAME.hosts' >> "\$1"
@@ -698,46 +714,14 @@ case "\$SCRIPT" in
 	;;
 esac
 EOF
-		chmod +x "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
+		chmod +x "/jffs/scripts/.$ADBLOCK_NAME.event.sh" "/jffs/scripts/mount.d/S50$ADBLOCK_NAME" "/jffs/scripts/mount.d/K50$ADBLOCK_NAME"
 
-		for SCRIPT in post-mount unmount services-start dnsmasq.postconf; do
-			adblock_log 'debug' "Adding event trigger to script (/jffs/scripts/$SCRIPT)"
-			if [ ! -f "/jffs/scripts/$SCRIPT" ]; then
-				printf '#!/bin/sh\n\n. '\''/jffs/scripts/.%s.event.sh'\'' %s "$@" ## %s ##\n' "$ADBLOCK_ESCNAME" "$SCRIPT" "$ADBLOCK_NAME" > "/jffs/scripts/$SCRIPT"
-				chmod +x "/jffs/scripts/$SCRIPT"
-			elif ! grep -Fq "## $ADBLOCK_NAME ##" "/jffs/scripts/$SCRIPT"; then
-				printf '. '\''/jffs/scripts/.%s.event.sh'\'' %s "$@" ## %s ##\n' "$ADBLOCK_ESCNAME" "$SCRIPT" "$ADBLOCK_NAME" >> "/jffs/scripts/$SCRIPT"
-			fi
-		done
-	elif [ "$1" = 'cron' ] && [ ! -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ]; then
-		local ADBLOCK_ESCDIR ADBLOCK_ESCNAME
-		# There will be written into single quotes so escape them
-		ADBLOCK_ESCDIR="$(string_escape s "$ADBLOCK_DIR")"
-		ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
-		cat > "/jffs/scripts/.$ADBLOCK_NAME.event.sh" << EOF
-#!/bin/sh
-
-SCRIPT="\$1"
-shift
-case "\$SCRIPT" in
-	'services-start')
-		## cron placeholder ##
-	;;
-	'cron')
-		if [ -x '$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' ]; then
-			'$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' update
+		if [ ! -x "/jffs/scripts/dnsmasq.postconf" ]; then
+			printf '#!/bin/sh\n\n' > '/jffs/scripts/dnsmasq.postconf'
+			chmod +x '/jffs/scripts/dnsmasq.postconf'
 		fi
-	;;
-esac
-EOF
-		chmod +x "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
-
-		adblock_log 'debug' "Adding event trigger to script (/jffs/scripts/services-start)"
-		if [ ! -f '/jffs/scripts/services-start' ]; then
-			printf '#!/bin/sh\n\n. '\''/jffs/scripts/.%s.event.sh'\'' services-start "$@" ## %s ##\n' "$ADBLOCK_ESCNAME" "$ADBLOCK_NAME" > '/jffs/scripts/services-start'
-			chmod +x '/jffs/scripts/services-start'
-		elif ! grep -Fq "## $ADBLOCK_NAME ##" '/jffs/scripts/services-start'; then
-			printf '. '\''/jffs/scripts/.%s.event.sh'\'' services-start "$@" ## %s ##\n' "$ADBLOCK_ESCNAME" "$ADBLOCK_NAME" >> '/jffs/scripts/services-start'
+		if ! grep -qF "## $ADBLOCK_NAME ##" '/jffs/scripts/dnsmasq.postconf'; then
+			printf '. '\''/jffs/scripts/.%s.event.sh'\'' dnsmasq.postconf "$@" ## %s ##\n' "$ADBLOCK_ESCNAME" "$ADBLOCK_NAME" >> '/jffs/scripts/dnsmasq.postconf'
 		fi
 	fi
 }
@@ -751,9 +735,7 @@ adblock_cron() {
 
 	if [ "$1" = 'disable' ]; then
 		adblock_log 'debug' 'Disabling adblock cron job'
-		if [ -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ]; then
-			sed -i 's/{ crontab.*$/## cron placeholder ##/' "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
-		fi
+		rm -f "/jffs/scripts/services.d/S50$ADBLOCK_NAME"
 		crontab -l | grep -v "#$ADBLOCK_NAME update#$" | crontab -
 		[ -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh" ] && chmod -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh"
 		return
@@ -841,7 +823,7 @@ adblock_cron() {
 			# shellcheck disable=SC2016
 			AWKSCRIPT='{if(!f&&/^### Load config settings$/){print p;f=1}else{p=$0}}f'
 		fi
-		if [ -z "$MYSCRIPT" ] || ! mkdir -p "$ADBLOCK_DIR" || ! { cat; awk "$AWKSCRIPT" "$MYSCRIPT"; } >"$ADBLOCK_DIR/$ADBLOCK_NAME.sh"; then
+		if [ -z "$MYSCRIPT" ] || ! mkdir -p "$ADBLOCK_DIR" || ! { cat; awk "$AWKSCRIPT" "$MYSCRIPT"; } > "$ADBLOCK_DIR/$ADBLOCK_NAME.sh"; then
 			adblock_log 'warning' "Unable to copy $ADBLOCK_NAME.sh to $ADBLOCK_DIR"
 			return
 		fi <<- EOF
@@ -871,15 +853,19 @@ adblock_cron() {
 	fi
 
 	adblock_log 'info' 'Adding cron job'
-	local LINE ADBLOCK_ESCNAME
+	local ADBLOCK_ESCNAME ADBLOCK_ESCESCNAME
 	ADBLOCK_ESCNAME="$(string_escape s "$ADBLOCK_NAME")"
-	LINE="$MINUTE $HOUR * * $DAY '/jffs/scripts/.$ADBLOCK_ESCNAME.event.sh' cron"
-	if [ ! -f "/jffs/scripts/.$ADBLOCK_NAME.event.sh" ]; then
-		adblock_scripts 'cron'
-	fi
+	ADBLOCK_ESCESCNAME="$(string_escape s "$ADBLOCK_ESCNAME")" # urgh
 
-	sed -i "s/## cron placeholder ##\|{ crontab.*$/$(string_escape b "{ crontab -l | grep -v '#$ADBLOCK_ESCNAME update#$' ; echo '$(string_escape s "$LINE") #$ADBLOCK_ESCNAME update#'; } | crontab -")/" "/jffs/scripts/.$ADBLOCK_NAME.event.sh"
-	{ crontab -l | grep -v "#$ADBLOCK_NAME update#$" ; echo "$LINE #$ADBLOCK_NAME update#"; } | crontab -
+	directory_scripts 'services' 'services-start' 'services-stop'
+
+	cat > "/jffs/scripts/services.d/S50$ADBLOCK_NAME" << EOF
+#!/bin/sh
+
+{ crontab -l | grep -v '#$ADBLOCK_ESCNAME update#$'; echo '$MINUTE $HOUR * * $DAY '\''/jffs/scripts/.$ADBLOCK_ESCESCNAME.event.sh'\'' cron #$ADBLOCK_ESCNAME update#'; } | crontab -
+EOF
+	chmod +x "/jffs/scripts/services.d/S50$ADBLOCK_NAME"
+	"/jffs/scripts/services.d/S50$ADBLOCK_NAME"
 }
 
 # Toggle the use of the hosts file in dnsmasq
