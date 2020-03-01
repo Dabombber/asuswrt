@@ -92,7 +92,7 @@ EOF
 		fi
 		# Add acme command
 		if [ ! -f '/jffs/configs/profile.add' ] || ! grep -qF '## acme ##' '/jffs/configs/profile.add'; then
-			echo 'acme() {( /jffs/scripts/.acme.event.sh alias "$@" )} ## acme ##' >> '/jffs/configs/profile.add'
+			echo 'acme() { /jffs/scripts/.acme.event.sh alias "$@"; } ## acme ##' >> '/jffs/configs/profile.add'
 		fi
 		# Add cron job
 		{ crontab -l | grep -v '#acme update#$' ; echo "$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#"; } | crontab -
