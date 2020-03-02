@@ -19,7 +19,7 @@ directory_scripts() {
 
 	[ ! -x "/jffs/scripts/$2" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$2" && chmod +x "/jffs/scripts/$2"
 	[ ! -x "/jffs/scripts/$3" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$3" && chmod +x "/jffs/scripts/$3"
-	
+
 	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$2"; then
 		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
 	fi
@@ -27,7 +27,6 @@ directory_scripts() {
 		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
 	fi
 }
-
 
 # Installs the event script for swap files
 # Usage: swap_scripts enable|disable
@@ -47,7 +46,8 @@ swap_scripts() {
 		[ ! -x '/jffs/scripts/mount.d/S10swaps' ] && cat > '/jffs/scripts/mount.d/S10swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c 'SWAPPATH="$1"
+[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
 	if [ -n "$SWAPFILE" ] && [ "${SWAPFILE#"$SWAPPATH/"}" != "$SWAPFILE" ] && [ -f "$SWAPFILE" ]; then
@@ -59,10 +59,11 @@ EOF
 		[ ! -x '/jffs/scripts/mount.d/K90swaps' ] && cat > '/jffs/scripts/mount.d/K90swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c 'SWAPPATH="$1"
+[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
-	if [ -n "$SWAPFILE" ] && [ "${SWAPFILE#"$SWAPPATH/"}" != "$SWAPFILE" ] && tail -n+2 /proc/swaps | grep -q "^$(printf '%s\n' "$SWAPFILE" | sed 's/[]\/$*.^&[]/\\&/g') "; then
+	if [ -n "$SWAPFILE" ] && [ "${SWAPFILE#"$SWAPPATH/"}" != "$SWAPFILE" ] && tail -n+2 /proc/swaps | grep -q "^$(printf "%s\n" "$SWAPFILE" | sed '\''s/[]\/$*.^&[]/\\&/g'\'') "; then
 		swapoff "$SWAPFILE" || swapoff -a;
 	fi
 done
@@ -75,6 +76,9 @@ EOF
 # Add or remove a file from the swaps config (automatic loading)
 # Usage: swap_config add|remove FILEPATH
 swap_config() {
+	if [ -z "$2" ]; then
+		false; return $?
+	fi
 	if [ "$1" = 'add' ]; then
 		if [ ! -s /jffs/configs/swaps ]; then
 			printf '%s\0' "$2" > /jffs/configs/swaps
@@ -116,7 +120,6 @@ mv -f /tmp/swaps.tmp /jffs/configs/swaps' _ "$2"
 		fi
 	fi
 }
-
 
 # Creates and mounts a swap file
 # Usage: swap_create [SIZE] [DIRECTORY] [FILENAME]
@@ -268,5 +271,17 @@ case "$1" in
 	'delete')
 		shift
 		swap_delete "$@"
+	;;
+	'add')
+		shift
+		swap_scripts enable
+		swap_config add "$@"
+	;;
+	'remove')
+		shift
+		swap_config remove "$@"
+	;;
+	'list')
+		[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null printf '%s\n'
 	;;
 esac

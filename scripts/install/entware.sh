@@ -200,13 +200,13 @@ EOF
 		cat > '/jffs/scripts/mount.d/K80entware' <<'EOF'
 #!/bin/sh
 
-		if [ "$(readlink -f -- '/tmp/opt')" = "$1/entware" ]; then
-			if [ -f '/tmp/.entware.services-start' ]; then
-				logger -t "entware[$$]" -p 'user.info' 'Stopping entware services'
-				/opt/etc/init.d/rc.unslung stop "$0"
-			fi
-			rm -f '/tmp/opt'
-		fi
+if [ "$(readlink -f -- '/tmp/opt')" = "$1/entware" ]; then
+	if [ -f '/tmp/.entware.services-start' ]; then
+		logger -t "entware[$$]" -p 'user.info' 'Stopping entware services'
+		/opt/etc/init.d/rc.unslung stop "$0"
+	fi
+	rm -f '/tmp/opt'
+fi
 EOF
 		chmod +x '/jffs/scripts/services.d/S20entware' '/jffs/scripts/services.d/K80entware' '/jffs/scripts/mount.d/S20entware' '/jffs/scripts/mount.d/K80entware'
 	fi

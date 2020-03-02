@@ -676,7 +676,6 @@ if [ "\$1" = '$ADBLOCK_MOUNT' ]; then
 					ln -sf "\$HOST_LINK" '/tmp/$ADBLOCK_ESCNAME.hosts'
 					killall -HUP dnsmasq
 				fi
-
 			) &
 		else
 			logger -t '$ADBLOCK_ESCNAME'"[\$\$]" -p 'user.info' 'Linking hosts and reloading dnsmasq'
@@ -700,12 +699,10 @@ EOF
 		cat > "/jffs/scripts/.$ADBLOCK_NAME.event.sh" << EOF
 #!/bin/sh
 
-SCRIPT="\$1"
-shift
-case "\$SCRIPT" in
+case "\$1" in
 	'dnsmasq.postconf')
 		[ ! -f '/tmp/$ADBLOCK_ESCNAME.hosts' ] && touch '/tmp/$ADBLOCK_ESCNAME.hosts'
-		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=%s\n' '/tmp/$ADBLOCK_ESCNAME.hosts' >> "\$1"
+		printf 'ptr-record=0.0.0.0.in-addr.arpa,0.0.0.0\nptr-record=0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.ip6.arpa,::\naddn-hosts=%s\n' '/tmp/$ADBLOCK_ESCNAME.hosts' >> "\$2"
 	;;
 	'cron')
 		if [ -x '$ADBLOCK_ESCDIR/$ADBLOCK_ESCNAME.sh' ]; then
