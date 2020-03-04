@@ -16,30 +16,21 @@ if [ "$Le_Domain" = 'example.com' ]; then
 	[ -x '/opt/etc/init.d/S80nginx' ] && /opt/etc/init.d/S80nginx restart
 
 	# Update Printer
-	DOMAIN='epson.lan'
+	DOMAIN='hp.lan'
 
 	# Grab the IP manually just in case local resolution is off
 	IP="$(nslookup "$DOMAIN" '127.0.0.1' | awk 'NR>2&&/^Address/{print $(NF==2?2:3);exit}')"
 	if ping -q -c 1 -w 1 "$IP" &>/dev/null; then
-		# Switch to self signed so we can delete the CA cert
-		curl -ks -o /dev/null -d 'SEL_SSLTLSUSECERT=SELF-SIGNED_CERT' "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/SET"
+		# Use a random password
+		PASSWORD="$(tr -dc 'A-F0-9' < /dev/urandom | dd bs=1c count=8 2>/dev/null)"
 
-		# Wait for printer reboot
-		COUNTER=0
-		LIMIT=10
-		sleep 10
-		while [ -z "$(curl -fks --connect-timeout 5 "https://$IP/PRESENTATION/ADVANCED/COMMON/TOP")" ] && [ $COUNTER -le $LIMIT ]; do
-			sleep 5
-			COUNTER=$((COUNTER + 1))
-		done
+		# Convert to PKCS#12 so printer can read it
+		openssl pkcs12 -export -in "$CERT_PATH" -inkey "$CERT_KEY_PATH" -certfile "$CA_CERT_PATH" -passout "pass:$PASSWORD" -out '/tmp/printer.pfx'
 
-		# Delete CA cert
-		curl -ks -o /dev/null "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/CA_DELETE"
+		# Upload to printer
+		curl -Lks -o /dev/null -F 'FileName=@/tmp/printer.pfx' -F "Password=$PASSWORD" -F 'Finish=Finish' "https://$IP/hp/device/Certificate.pfx"
 
-		# Upload new CA cert
-		curl -ks -o /dev/null  -F 'format=pem_der' -F "cert0=@$CERT_FULLCHAIN_PATH" -F "key=@$CERT_KEY_PATH" -F 'id=2' "https://$IP/PRESENTATIONEX/CERT/IMPORT_CHAIN"
-
-		# Switch to CA cert
-		curl -ks -o /dev/null -d 'SEL_SSLTLSUSECERT=CA-SIGNED_CERT' "https://$IP/PRESENTATION/ADVANCED/NWS_CERT_SSLTLS/SET"
+		# remove PKCS#12 file
+		rm -f '/tmp/printer.pfx'
 	fi
 fi
