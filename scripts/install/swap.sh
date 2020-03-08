@@ -46,7 +46,7 @@ swap_scripts() {
 		[ ! -x '/jffs/scripts/mount.d/S10swaps' ] && cat > '/jffs/scripts/mount.d/S10swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
 SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
@@ -59,7 +59,7 @@ EOF
 		[ ! -x '/jffs/scripts/mount.d/K90swaps' ] && cat > '/jffs/scripts/mount.d/K90swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
 SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
@@ -84,7 +84,7 @@ swap_config() {
 			printf '%s\0' "$2" > /jffs/configs/swaps
 			true; return $?
 		else
-			xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+			cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
 SWAPFILE="$1"
 shift
 for FILE in "$@"; do
@@ -99,7 +99,7 @@ printf '\''%s\0'\'' "$SWAPFILE" >> /jffs/configs/swaps' _ "$2"
 		if [ ! -f /jffs/configs/swaps ]; then
 			false; return $?
 		else
-			xargs --arg-file=/jffs/configs/swaps --null sh -c '#!/bin/sh
+			cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
 SWAPFILE="$1"
 shift
 FLAG=false
@@ -282,6 +282,6 @@ case "$1" in
 		swap_config remove "$@"
 	;;
 	'list')
-		[ -f /jffs/configs/swaps ] && xargs --arg-file=/jffs/configs/swaps --null printf '%s\n'
+		[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 printf '%s\n'
 	;;
 esac
