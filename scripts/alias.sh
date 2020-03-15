@@ -208,8 +208,19 @@ alias_opkg() {
 	local ARG SIZE="" SUBCOMMAND=""
 	for ARG in "$@"; do
 		[ "$ARG" = '--size' ] && SIZE='yes'
-		[ -n "${ARG##-*}" ] && [ -z "$SUBCOMMAND" ] && SUBCOMMAND="$ARG"
+		if [ -z "$SUBCOMMAND" ]; then
+			# Shortcuts
+			case "$ARG" in
+				'ls') ARG='list-installed';;
+				'lu') ARG='list-upgradable';;
+				'rm') ARG='remove';;
+			esac
+			[ -n "${ARG##-*}" ] && SUBCOMMAND="$ARG"
+		fi
+		set -- "$@" "$ARG"
+		shift
 	done
+
 	if [ "$SUBCOMMAND" = "list-upgradable" ]; then
 		/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_VUPDATE}\3/"
 	elif [ "$SUBCOMMAND" = 'list' ] || [ "$SUBCOMMAND" = 'find' ]; then
