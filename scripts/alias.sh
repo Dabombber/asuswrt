@@ -102,7 +102,7 @@ alias_enable() {
 					;;
 					*'ENABLED='*)
 						sed -i 's/ENABLED=.*/ENABLED=yes/' \"\$1\"
-						echo \"\${1#./S??} has been disabled\" > /proc/$$/fd/1
+						echo \"\${1#./S??} has been enabled\" > /proc/$$/fd/1
 					;;
 					*)
 						echo \"Unable to enable \${1#./S??}, incompatible init.d file\" > /proc/$$/fd/2
