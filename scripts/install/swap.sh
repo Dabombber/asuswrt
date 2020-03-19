@@ -46,7 +46,7 @@ swap_scripts() {
 		[ ! -x '/jffs/scripts/mount.d/S10swaps' ] && cat > '/jffs/scripts/mount.d/S10swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
+[ -f /jffs/configs/swaps ] && xargs -r0 sh -c '#!/bin/sh
 SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
@@ -54,12 +54,12 @@ for SWAPFILE in "$@"; do
 		swapon "$SWAPFILE"
 	fi
 done
-' _ "$1"
+' _ "$1" < /jffs/configs/swaps
 EOF
 		[ ! -x '/jffs/scripts/mount.d/K90swaps' ] && cat > '/jffs/scripts/mount.d/K90swaps' <<'EOF'
 #!/bin/sh
 
-[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
+[ -f /jffs/configs/swaps ] && xargs -r0 sh -c '#!/bin/sh
 SWAPPATH="$1"
 shift
 for SWAPFILE in "$@"; do
@@ -67,7 +67,7 @@ for SWAPFILE in "$@"; do
 		swapoff "$SWAPFILE" || swapoff -a;
 	fi
 done
-' _ "$1"
+' _ "$1" < /jffs/configs/swaps
 EOF
 		chmod +x '/jffs/scripts/mount.d/S10swaps' '/jffs/scripts/mount.d/K90swaps'
 	fi
@@ -84,7 +84,7 @@ swap_config() {
 			printf '%s\0' "$2" > /jffs/configs/swaps
 			true; return $?
 		else
-			cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
+			xargs -0 sh -c '#!/bin/sh
 SWAPFILE="$1"
 shift
 for FILE in "$@"; do
@@ -92,30 +92,27 @@ for FILE in "$@"; do
 		exit 1
 	fi
 done
-printf '\''%s\0'\'' "$SWAPFILE" >> /jffs/configs/swaps' _ "$2"
+printf '\''%s\0'\'' "$SWAPFILE" >> /jffs/configs/swaps' _ "$2" < /jffs/configs/swaps
 			return $?
 		fi
 	elif [ "$1" = 'remove' ]; then
 		if [ ! -f /jffs/configs/swaps ]; then
 			false; return $?
 		else
-			cat /jffs/configs/swaps | xargs -r0 sh -c '#!/bin/sh
+			xargs -r0 sh -c '#!/bin/sh
 SWAPFILE="$1"
 shift
-FLAG=false
-: > /tmp/swaps.tmp
+FLAG="false"
 for FILE in "$@"; do
 	if [ "$FILE" = "$SWAPFILE" ]; then
-		FLAG=true
+		FLAG="true"
 	else
-		printf '\''%s\0'\'' "$FILE" >> /tmp/swaps.tmp
+		set -- "$@" "$FILE"
 	fi
+	shift
 done
-if [ "$FLAG" != "true" ]; then
-	rm -f /tmp/swaps.tmp
-	exit 1
-fi
-mv -f /tmp/swaps.tmp /jffs/configs/swaps' _ "$2"
+[ "$FLAG" != "true" ] && exit 1
+printf '\''%s\0'\'' "$@" > /jffs/configs/swaps' _ "$2" < /jffs/configs/swaps
 			return $?
 		fi
 	fi
@@ -187,7 +184,7 @@ swap_create() {
 	# Get the real path
 	SWAP_PATH="$(readlink -f -- "$SWAP_PATH")"
 	local FILE_SYSTEM FILE_CAPACITY
-	read -r _ FILE_SYSTEM _ _ FILE_CAPACITY _ <<- EOF
+	read -r _ FILE_SYSTEM _ _ FILE_CAPACITY _ <<-EOF
 		$(df -T "$SWAP_PATH" | tail -n1)
 	EOF
 	if ! printf '%s\n' "$FILE_SYSTEM" | grep -qE "$ALLOWED_FILESYSTEMS"; then
@@ -282,6 +279,6 @@ case "$1" in
 		swap_config remove "$@"
 	;;
 	'list')
-		[ -f /jffs/configs/swaps ] && cat /jffs/configs/swaps | xargs -r0 printf '%s\n'
+		[ -f /jffs/configs/swaps ] && xargs -r0 printf '%s\n' < /jffs/configs/swaps
 	;;
 esac
