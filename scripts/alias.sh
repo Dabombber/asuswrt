@@ -59,14 +59,18 @@ alias_service() {
 		set -- "${PASS#;}"
 	fi
 
+	local RCDEBUG PID
+	RCDEBUG="$(nvram get rc_debug)"
+
 	# Make sure no temp files stick around
-	trap '{ rm -f "/tmp/.service$$.log" "/tmp/.service$$.fifo"; exit; }' EXIT INT TERM
+	trap '{ rm -f "/tmp/.service$$.log" "/tmp/.service$$.fifo"; [ -n "$RCDEBUG" ] && nvram set "rc_debug=$RCDEBUG" || nvram unset rc_debug; exit; }' EXIT INT TERM
 
 	# Prepare to grab errors, can't just tail|grep since we need the tail pid
 	mknod "/tmp/.service$$.fifo" p
-	tail -n0 -F /tmp/syslog.log >"/tmp/.service$$.fifo" &
-	local PID=$!
-	grep --line-buffered '^... .. ..:..:.. rc: received unrecognized event: ' <"/tmp/.service$$.fifo" >"/tmp/.service$$.log" &
+	tail -n0 -F /tmp/syslog.log > "/tmp/.service$$.fifo" &
+	PID=$!
+	grep --line-buffered '^... .. ..:..:.. rc: received unrecognized event: ' < "/tmp/.service$$.fifo" > "/tmp/.service$$.log" &
+	nvram set rc_debug=1
 
 	# Send command, usleep 500000 is too short for logs to show
 	/sbin/service "$@" >/dev/null
@@ -79,7 +83,7 @@ alias_service() {
 	if [ -s "/tmp/.service$$.log" ]; then
 		while read -r LINE; do
 			echo "Unrecognized event: ${LINE:49}" >&2
-		done <"/tmp/.service$$.log"
+		done < "/tmp/.service$$.log"
 	else
 		echo 'Done.'
 	fi
@@ -205,7 +209,7 @@ alias_opkg() {
 	local CLR_DESC="${CSI}1;30m"
 	local CLR_RESET="${CSI}m"
 
-	local ARG SIZE="" SUBCOMMAND=""
+	local ARG SIZE='no' SUBCOMMAND=""
 	for ARG in "$@"; do
 		[ "$ARG" = '--size' ] && SIZE='yes'
 		if [ -z "$SUBCOMMAND" ]; then
@@ -222,12 +226,12 @@ alias_opkg() {
 	done
 
 	if [ "$SUBCOMMAND" = "list-upgradable" ]; then
-		/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_VUPDATE}\3/"
+		/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_VUPDATE}\3${CLR_RESET}/"
 	elif [ "$SUBCOMMAND" = 'list' ] || [ "$SUBCOMMAND" = 'find' ]; then
 		if [ "$SIZE" = 'yes' ]; then
-			/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_SIZE}\3${CLR_RESET} - ${CLR_DESC}\4/"
+			/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_SIZE}\3${CLR_RESET} - ${CLR_DESC}\4${CLR_RESET}/"
 		else
-			/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_DESC}\3/"
+			/opt/bin/opkg "$@" | sed "s/\([^ ]*\) - \([^ ]*\) - \(.*\)/${CLR_NAME}\1${CLR_RESET} - ${CLR_VERSION}\2${CLR_RESET} - ${CLR_DESC}\3${CLR_RESET}/"
 		fi
 	elif [ "$SUBCOMMAND" = 'list-installed' ]; then
 		if [ "$SIZE" = 'yes' ]; then
