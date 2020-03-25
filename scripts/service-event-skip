@@ -8,7 +8,7 @@ if [ "$1" = 'start' ]; then
 		;;
 		'dhcp6c')
 			sleep 30
-			if [ -z "$(ps | awk '{if(NR==1)c=index($0,"COMMAND");else if(substr($0,c)~p){print $1}}' p='^odhcp6c')" ]; then
+			if [ -z "$(pidof odhcp6c)" ]; then
 				service start_dhcp6c
 			fi
 		;;

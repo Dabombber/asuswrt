@@ -101,7 +101,7 @@ EOF
 
 acme_install() {
 
-	curl -sL 'https://github.com/Neilpang/acme.sh/archive/master.tar.gz' | tar xzf -
+	curl -sL 'https://github.com/acmesh-official/acme.sh/archive/master.tar.gz' | tar xzf -
 	(
 		cd acme.sh-master || return
 		chmod +x acme.sh
