@@ -233,12 +233,25 @@ get_url_modified() {
 	local DATE
 	if [ -z "${1##*"raw.githubusercontent.com"*}" ]; then
 		# Github doesn't send Last-Modified headers, use the api instead
+		# https://raw.githubusercontent.com/:owner/:repo/:branch/:path
 		local OWNER REPO BRANCH REPOPATH
 		IFS="/" read -r _ OWNER REPO BRANCH REPOPATH <<- EOF
 			${1#*://}
 		EOF
 
-		DATE="$(curl -sf "https://api.github.com/repos/$OWNER/$REPO/commits?path=$REPOPATH&sha=$BRANCH&per_page=1" | awk -F': ' '/^[[:space:]]*"date"[[:space:]]*:/{gsub(/["[:space:]]/,"",$2);d=$2};END{print d}')"
+		DATE="$(curl -sf -H 'Accept: application/vnd.github.v3+json' "https://api.github.com/repos/$OWNER/$REPO/commits?path=$REPOPATH&sha=$BRANCH&per_page=1" | awk -F': ' '/^[[:space:]]*"date"[[:space:]]*:/{gsub(/[",[:space:]]/,"",$2);d=$2};END{print d}')"
+		if [ -n "$DATE" ]; then
+			date -D '%Y-%m-%dT%H:%M:%SZ' -d "$DATE" '+%s'
+		fi
+	elif [ -z "${1##*"gist.githubusercontent.com"*}" ]; then
+		# Likewise for gists
+		# https://gist.githubusercontent.com/:owner/:gist_id/raw/
+		local GISTID
+		IFS="/" read -r _ _ GISTID _ <<- EOF
+			${1#*://}
+		EOF
+
+		DATE="$(curl -sf -H 'Accept: application/vnd.github.v3+json' "https://api.github.com/gists/$GISTID/commits?per_page=1" | awk -F': ' '/^[[:space:]]*"committed_at"[[:space:]]*:/{gsub(/[",[:space:]]/,"",$2);d=$2};END{print d}')"
 		if [ -n "$DATE" ]; then
 			date -D '%Y-%m-%dT%H:%M:%SZ' -d "$DATE" '+%s'
 		fi
