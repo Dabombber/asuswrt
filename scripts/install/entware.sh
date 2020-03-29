@@ -142,10 +142,10 @@ directory_scripts() {
 	[ ! -x "/jffs/scripts/$3" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$3" && chmod +x "/jffs/scripts/$3"
 
 	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$2"; then
-		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
 	fi
 	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$3"; then
-		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
 	fi
 }
 

@@ -22,7 +22,7 @@ acme_scripts() {
 			fi
 		done
 		# Remove cron job
-		crontab -l | grep -v '#acme update#$' | crontab -
+		crontab -l 2>/dev/null | grep -v '#acme update#$' | crontab -
 		# Remove event script
 		rm -f '/jffs/scripts/.acme.event.sh'
 	elif [ "$1" = 'enable' ]; then
@@ -44,7 +44,7 @@ SCRIPT="\$1"
 shift
 case "\$SCRIPT" in
 	'services-start')
-		{ crontab -l | grep -v '#acme update#$' ; echo '$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#'; } | crontab -
+		{ crontab -l 2>/dev/null | grep -v '#acme update#$' ; echo '$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#'; } | crontab -
 	;;
 	'alias')
 		if [ -x '$ACME_ABSDIR/acme.sh' ]; then
@@ -95,7 +95,7 @@ EOF
 			echo 'acme() { /jffs/scripts/.acme.event.sh alias "$@"; } ## acme ##' >> '/jffs/configs/profile.add'
 		fi
 		# Add cron job
-		{ crontab -l | grep -v '#acme update#$' ; echo "$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#"; } | crontab -
+		{ crontab -l 2>/dev/null | grep -v '#acme update#$' ; echo "$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#"; } | crontab -
 	fi
 }
 

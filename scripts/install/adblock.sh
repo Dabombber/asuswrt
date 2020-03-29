@@ -387,10 +387,10 @@ directory_scripts() {
 	[ ! -x "/jffs/scripts/$3" ] && printf '#!/bin/sh\n\n' > "/jffs/scripts/$3" && chmod +x "/jffs/scripts/$3"
 
 	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$2"; then
-		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/S'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$2"
 	fi
 	if ! grep -qF "[ -d '/jffs/scripts/$1.d' ]" "/jffs/scripts/$3"; then
-		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && . \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
+		echo "[ -d '/jffs/scripts/$1.d' ] && for FILENAME in '/jffs/scripts/$1.d/K'[0-9][0-9]*; do [ -x \"\$FILENAME\" ] && \"\$FILENAME\" \"\$@\"; done" >> "/jffs/scripts/$3"
 	fi
 }
 
@@ -733,7 +733,7 @@ adblock_cron() {
 	if [ "$1" = 'disable' ]; then
 		adblock_log 'debug' 'Disabling adblock cron job'
 		rm -f "/jffs/scripts/services.d/S50$ADBLOCK_NAME"
-		crontab -l | grep -v "#$ADBLOCK_NAME update#$" | crontab -
+		crontab -l 2>/dev/null | grep -v "#$ADBLOCK_NAME update#$" | crontab -
 		[ -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh" ] && chmod -x "$ADBLOCK_DIR/$ADBLOCK_NAME.sh"
 		return
 	fi
@@ -859,7 +859,7 @@ adblock_cron() {
 	cat > "/jffs/scripts/services.d/S50$ADBLOCK_NAME" << EOF
 #!/bin/sh
 
-{ crontab -l | grep -v '#$ADBLOCK_ESCNAME update#$'; echo '$MINUTE $HOUR * * $DAY '\''/jffs/scripts/.$ADBLOCK_ESCESCNAME.event.sh'\'' cron #$ADBLOCK_ESCNAME update#'; } | crontab -
+{ crontab -l 2>/dev/null | grep -v '#$ADBLOCK_ESCNAME update#$'; echo '$MINUTE $HOUR * * $DAY '\''/jffs/scripts/.$ADBLOCK_ESCESCNAME.event.sh'\'' cron #$ADBLOCK_ESCNAME update#'; } | crontab -
 EOF
 	chmod +x "/jffs/scripts/services.d/S50$ADBLOCK_NAME"
 	"/jffs/scripts/services.d/S50$ADBLOCK_NAME"
