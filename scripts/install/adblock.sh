@@ -439,6 +439,17 @@ adblock_log() {
 	logger -t "${ADBLOCK_NAME}[$$]" -p "$_FACILITY.$1" "$2"
 }
 
+# Download a file and fix line endings, remove any failed partial downloads
+# Usage: adblock_file_download URL FILEPATH
+adblock_file_download() {
+	if ! curl -sfL "$1" -o "$2"; then
+		rm -f "$2"
+		false; return $?
+	fi
+	dos2unix "$2"
+	true; return $?
+}
+
 # Download hostlist files to the download directory if newer
 # Usage: adblock_download
 adblock_download() {
@@ -476,8 +487,10 @@ adblock_download() {
 			DATE="$(get_url_modified "$URL")"
 			if [ -z "$DATE" ]; then
 				adblock_log 'debug' "Date check failed, checking md5 ($URL)"
-				curl -sfL "$URL" -o "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp"
-				dos2unix "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp"
+				if ! adblock_file_download "$URL" "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp"; then
+					adblock_log 'warning' "Error downloading file ($URL)"
+					continue
+				fi
 				if [ "$(md5sum "$ADBLOCK_HOSTS_DIR/$FILENAME").tmp" = "$(md5sum "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp")" ]; then
 					adblock_log 'debug' "MD5 match, file is up to date ($URL)"
 					rm -f "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp"
@@ -491,14 +504,18 @@ adblock_download() {
 				continue
 			else
 				adblock_log 'info' "File is outdated, downloading new version ($URL)"
-				rm -f "$ADBLOCK_HOSTS_DIR/$FILENAME"
-				curl -sfL "$URL" -o "$ADBLOCK_HOSTS_DIR/$FILENAME"
-				dos2unix "$ADBLOCK_HOSTS_DIR/$FILENAME"
+				if ! adblock_file_download "$URL" "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp"; then
+					adblock_log 'warning' "Error downloading file ($URL)"
+					continue
+				fi
+				mv -f "$ADBLOCK_HOSTS_DIR/$FILENAME.tmp" "$ADBLOCK_HOSTS_DIR/$FILENAME"
 			fi
 		else
 			adblock_log 'info' "Downloading new file ($URL)"
-			curl -sfL "$URL" -o "$ADBLOCK_HOSTS_DIR/$FILENAME"
-			dos2unix "$ADBLOCK_HOSTS_DIR/$FILENAME"
+			if ! adblock_file_download "$URL" "$ADBLOCK_HOSTS_DIR/$FILENAME"; then
+				adblock_log 'warning' "Error downloading file ($URL)"
+				continue
+			fi
 		fi
 
 		COUNT=$((COUNT + 1))
