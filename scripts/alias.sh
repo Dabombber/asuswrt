@@ -59,17 +59,15 @@ alias_service() {
 		set -- "${PASS#;}"
 	fi
 
-	local RCDEBUG PID
+	local RCDEBUG PID=""
 	RCDEBUG="$(nvram get rc_debug)"
 
 	# Make sure no temp files stick around
-	trap '{ rm -f "/tmp/.service$$.log" "/tmp/.service$$.fifo"; [ -n "$RCDEBUG" ] && nvram set "rc_debug=$RCDEBUG" || nvram unset rc_debug; exit; }' EXIT INT TERM
+	trap '{ rm -f "/tmp/.service$$.log"; [ -n "$PID" ] && kill $PID 2>/dev/null; [ -n "$RCDEBUG" ] && nvram set "rc_debug=$RCDEBUG" || nvram unset rc_debug; exit; }' EXIT INT TERM
 
-	# Prepare to grab errors, can't just tail|grep since we need the tail pid
-	mknod "/tmp/.service$$.fifo" p
-	tail -n0 -F /tmp/syslog.log > "/tmp/.service$$.fifo" &
+	# Prepare to grab errors
+	tail -n0 -F /tmp/syslog.log > "/tmp/.service$$.log" &
 	PID=$!
-	grep --line-buffered '^... .. ..:..:.. rc: received unrecognized event: ' < "/tmp/.service$$.fifo" > "/tmp/.service$$.log" &
 	nvram set rc_debug=1
 
 	# Send command, usleep 500000 is too short for logs to show
@@ -77,12 +75,14 @@ alias_service() {
 	sleep 1
 
 	# Cleanup, grep will kill itself
-	kill $PID 2>/dev/null
+	kill "$PID" 2>/dev/null
+	PID=""
 
 	# Check for errors
+	[ -f "/tmp/.service$$.log" ] && sed -i '/rc: received unrecognized event:/!d' "/tmp/.service$$.log"
 	if [ -s "/tmp/.service$$.log" ]; then
 		while read -r LINE; do
-			echo "Unrecognized event: ${LINE:49}" >&2
+			echo "Unrecognized event: ${LINE#*"event: "}" >&2
 		done < "/tmp/.service$$.log"
 	else
 		echo 'Done.'

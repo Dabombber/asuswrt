@@ -43,12 +43,15 @@ fi
 
 # Monitor skipped events
 tail -n0 -F '/tmp/syslog.log' | while read -r LINE; do
-	if [ "${LINE:16:27}" = 'rc_service: skip the event:' ]; then
-		if [ -x '/jffs/scripts/service-event-skip' ]; then
-			EVENT="${LINE:44}"
-			EVENT="${EVENT%.}"
+	if [ -z "${LINE##*"rc_service: skip the event:"*}" ] && [ -x '/jffs/scripts/service-event-skip' ]; then
+		EVENT="${LINE#*"event: "}"
+		EVENT="${EVENT%.}"
+		if [ -z "${EVENT##*_*}" ]; then
 			logger "custom_script: Running /jffs/scripts/service-event-skip (args: ${EVENT%%_*} ${EVENT#*_})"
 			/jffs/scripts/service-event-skip "${EVENT%%_*}" "${EVENT#*_}" &
+		else
+			logger "custom_script: Running /jffs/scripts/service-event-skip (arg: $EVENT)"
+			/jffs/scripts/service-event-skip "" "$EVENT" &
 		fi
 	fi
 done &
