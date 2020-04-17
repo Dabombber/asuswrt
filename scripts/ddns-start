@@ -193,7 +193,7 @@ if ! is_function 'ddns_update_ipv6' && is_function 'ddns_update_ipv4'; then
 fi
 
 # Set sail for fail
-[ "$REPORT" = 'both' ] && trap 'RESULT="fail"' HUP
+[ "$REPORT" = 'both' ] && trap 'RESULT="fail"; wait' USR1
 
 # Update both IPv4 and IPv6 at the same time
 if is_function 'ddns_update_ipv6' && [ "$(nvram get ipv6_service)" != 'disabled' ]; then
@@ -216,7 +216,7 @@ if is_function 'ddns_update_ipv6' && [ "$(nvram get ipv6_service)" != 'disabled'
 				/sbin/ddns_custom_updated 1
 			fi
 		elif [ "$REPORT" = 'both' ] && [ "$UPDATE" = 'fail' ]; then
-			kill -HUP "$$"
+			kill -USR1 "$$"
 		fi
 	) &
 else
@@ -249,7 +249,7 @@ if is_function 'ddns_update_ipv4'; then
 				/sbin/ddns_custom_updated 1
 			fi
 		elif [ "$REPORT" = 'both' ] && [ "$UPDATE" = 'fail' ]; then
-			kill -HUP "$$"
+			kill -USR1 "$$"
 		fi
 	) &
 else

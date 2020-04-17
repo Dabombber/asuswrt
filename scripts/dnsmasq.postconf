@@ -19,5 +19,5 @@ if [ "$(nvram get dns_local_cache)" = '1' ]; then
 	} >> "$1"
 fi
 
-# Use link address instead of global IP
-sed -i 's/\[::\]/\[fe80::\]/' "$1"
+# Use link address as well as global IP, DHCP hostnames for IPv6 android devices
+sed -i -e 's/option6:23,\[::\]/&,\[fe80::\]/' -e 's/ra-stateless/&,ra-names/' "$1"

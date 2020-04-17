@@ -6,7 +6,7 @@ MAGICNUMBER=20
 . /jffs/scripts/include/string.sh
 
 # Remove any stale file
-TIMESTAMP="$(date -r '/www/notification.css')" # Use css file date since js will be modified
+TIMESTAMP="$(date -r '/www/require/')" # Use a folder date since js will be modified
 if [ -f "$NOTIFILE" ]; then
 	if ! grep -Fq "$TIMESTAMP" "$NOTIFILE"; then
 		mount | grep -Fq '/www/notification.js' && umount '/www/notification.js'

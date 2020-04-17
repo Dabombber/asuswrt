@@ -8,7 +8,7 @@ if [ "$1" = 'start' ]; then
 		;;
 		'dhcp6c')
 			sleep 30
-			if [ -z "$(pidof odhcp6c)" ]; then
+			if ! pidof odhcp6c &>/dev/null; then
 				service start_dhcp6c
 			fi
 		;;

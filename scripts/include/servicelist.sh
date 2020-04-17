@@ -221,9 +221,6 @@ if is_supported 'amas'; then
 	print_option 'amas_lldpd'
 	print_option 'obd'
 fi
-if is_supported 'amas' && [ -x '/sbin/obd_monitor' ]; then
-	print_option 'obd_monitor'
-fi
 if is_supported 'amas' && is_supported 'user_low_rssi'; then
 	print_option 'roamast'
 fi

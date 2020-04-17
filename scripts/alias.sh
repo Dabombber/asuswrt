@@ -74,7 +74,7 @@ alias_service() {
 	/sbin/service "$@" >/dev/null
 	sleep 1
 
-	# Cleanup, grep will kill itself
+	# Cleanup
 	kill "$PID" 2>/dev/null
 	PID=""
 
