@@ -36,11 +36,9 @@ fixtime() {
 	rm /tmp/.fixtime
 
 	# Already been processed by syslog-ng, this shouldn't happen
-	[ -L /tmp/syslog.log ] && return
-
-	# Only fix entries up until now
-	cp /tmp/syslog.log /tmp/syslog.tmp
-	: > /tmp/syslog.log
+	if [ -L /tmp/syslog.log ] || [ ! -f /tmp/syslog.log ]; then
+		return
+	fi
 
 	# Time offset in seconds for pre-ntp'ed log entries = current_epoch - (init_epoch + (current_uptime - init_uptime))
 	CURRENT_UPTIME="$(awk -F. '{print $1}' < /proc/uptime)"
@@ -50,13 +48,16 @@ fixtime() {
 	# Chopshop busybox
 	if ! type tac &>/dev/null; then
 		tac() {
-			awk '{print NR" "$0}' | sort -k1 -n -r | sed 's/^[^ ]* //g'
+			awk '{print NR" "$0}' -- "$@" | sort -k1 -n -r | sed 's/^[^ ]* //g'
 		}
 	fi
 
 	# Reverse the file so we only apply changes to the latest boot
-	tac /tmp/syslog.tmp > /tmp/revlog.tmp
-	: > /tmp/fixlog.tmp
+	if [ -f /tmp/syslog.log-1 ]; then
+		tac /tmp/syslog.log-1 /tmp/syslog.log > /tmp/revlog.tmp
+	else
+		tac /tmp/syslog.log > /tmp/revlog.tmp
+	fi
 
 	# Process lines between ntpd-sync and klogd-start
 	local LINE LINE_EPOCH STAGE='start'
@@ -78,14 +79,10 @@ fixtime() {
 
 	# Only append changes if processed properly
 	if [ "$STAGE" = 'end' ]; then
-		tac /tmp/fixlog.tmp >> /tmp/syslog.log-1
-	else
-		cat /tmp/syslog.tmp >> /tmp/syslog.log-1
+		tac /tmp/fixlog.tmp > /tmp/syslog.log
+		rm -f /tmp/syslog.log-1
 	fi
-	rm -f /tmp/syslog.tmp /tmp/revlog.tmp /tmp/fixlog.tmp
-
-	# Start syslog-ng if it was waiting for ntp sync
-	[ -x /opt/etc/init.d/S01syslog-ng ] && /opt/etc/init.d/S01syslog-ng start
+	rm -f /tmp/revlog.tmp /tmp/fixlog.tmp
 }
 
 web_mount() {
@@ -159,9 +156,15 @@ waitkill() {
 # Kill the stock syslog in preperation for syslog-ng
 # Usage: pre_syslog
 pre_syslog() {
+	# Do nothing if it's not going to be started
+	[ "$ENABLED" != 'yes' ] && return
+
 	# kill any/all running klogd and/or syslogd
 	pidof klogd &>/dev/null && killall klogd
 	pidof syslogd &>/dev/null && killall syslogd
+
+	# While nothing is logging lets see if we can fix the timestamps
+	[ "$(nvram get ntp_ready)" = '1' ] && fixtime
 
 	# Append stock logs
 	if [ ! -L /tmp/syslog.log ]; then
@@ -210,7 +213,10 @@ case "$EVENT" in
 	;;
 	'service-event')
 		if [ "$1_$2" = 'restart_diskmon' ]; then
-			[ "$(nvram get ntp_ready)" = '1' ] && fixtime
+			if [ "$(nvram get ntp_ready)" = '1' ] && [ -f /tmp/.ntpwait-syslogng ]; then
+				rm /tmp/.ntpwait-syslogng
+				[ -x /opt/etc/init.d/S01syslog-ng ] && /opt/etc/init.d/S01syslog-ng start
+			fi
 		elif [ "$1" != 'stop' ] && { [ "$2" = 'logger' ] || [ "$2" = 'time' ]; } && pidof syslog-ng &>/dev/null; then
 			waitkill 'klogd' &
 			waitkill 'syslogd' &
@@ -223,7 +229,10 @@ case "$EVENT" in
 		PROC='syslog-ng'
 
 		# Don't run until time is set
-		[ "$(nvram get ntp_ready)" != '1' ] && ENABLED='no'
+		if [ "$(nvram get ntp_ready)" != '1' ]; then
+			touch /tmp/.ntpwait-syslogng
+			ENABLED='no'
+		fi
 
 		case "$1" in
 			'start')
