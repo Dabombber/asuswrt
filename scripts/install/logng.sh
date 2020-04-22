@@ -134,8 +134,8 @@ web_mount() {
 			# Read syslog as text instead of script
 			s/dataType: 'script'/dataType: 'text'/
 
+			# Some IE thing which most likely doesn't even work
 			s/getElementById("textarea").style/getElementById("syslogContainer").style/
-			s/\$("#textarea")/\$("#syslogContainer")/g
 
 			# Replace success function
 			/var h = 0;/d
