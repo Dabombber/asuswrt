@@ -1,0 +1,65 @@
+#syslogContainer {
+	width: 63em;
+	height: 27em;
+	resize: both;
+	overflow: auto;
+	font-family: 'Courier New', Courier, mono;
+	font-size: 11px;
+}
+#syslogTable {
+	table-layout: fixed;
+	min-height: 300px;
+	border-collapse: collapse;
+}
+#syslogTable th {
+	margin: 0px;
+	border: 1px solid #2F3A3E;
+	position: sticky;
+	top: 0;
+	background: #2F3A3E;
+	text-align: left;
+}
+#syslogTable td {
+	padding-left: 2px;
+	padding-right: 2px;
+	margin: 0px;
+	border: 1px solid gray;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+/* Hide raw message, or everything else */
+#syslogTable th:first-of-type,
+#syslogTable tr.lvl_unknown td:first-of-type,
+#syslogTable tr.lvl_emerg td:first-of-type,
+#syslogTable tr.lvl_alert td:first-of-type,
+#syslogTable tr.lvl_crit td:first-of-type,
+#syslogTable tr.lvl_err td:first-of-type,
+#syslogTable tr.lvl_warning td:first-of-type,
+#syslogTable tr.lvl_notice td:first-of-type,
+#syslogTable tr.lvl_info td:first-of-type,
+#syslogTable tr.lvl_debug td:first-of-type,
+#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type) {
+	display: none;
+}
+
+/* Fix the width of everything but the message  */
+#syslogTable th, #syslogTable td {
+	width: 0px;
+}
+#syslogTable td:first-of-type,
+#syslogTable th:last-of-type,
+#syslogTable td:last-of-type {
+	width: auto;
+	overflow: scroll;
+}
+
+/* Toggle columns */
+#syslogTable.nofacility th:nth-of-type(2),
+#syslogTable.nofacility td:nth-of-type(2) {
+	display: none;
+}
+#syslogTable.nohost th:nth-of-type(4),
+#syslogTable.nohost td:nth-of-type(4) {
+	display: none;
+}

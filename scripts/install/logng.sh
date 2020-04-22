@@ -30,10 +30,13 @@ readonly SYSLOG_HEADER='### Top of Log File ###'
 # Usage: fixtime
 fixtime() {
 	# Run once
-	[ ! -f /tmp/.fixtime ] && return
-	local INIT_UPTIME INIT_EPOCH CURRENT_UPTIME CURRENT_EPOCH OFFSET
-	read -r INIT_UPTIME INIT_EPOCH < /tmp/.fixtime
-	rm /tmp/.fixtime
+	if [ ! -f /tmp/.time-init ] || [ ! -f /tmp/.time-sync ]; then
+		return
+	fi
+	local INIT_UPTIME INIT_EPOCH CURRENT_UPTIME CURRENT_EPOCH SYNC_EPOCH OFFSET
+	read -r INIT_UPTIME INIT_EPOCH < /tmp/.time-init
+	read -r _ SYNC_EPOCH < /tmp/.time-sync
+	rm /tmp/.time-init
 
 	# Already been processed by syslog-ng, this shouldn't happen
 	if [ -L /tmp/syslog.log ] || [ ! -f /tmp/syslog.log ]; then
@@ -60,25 +63,34 @@ fixtime() {
 	fi
 
 	# Process lines between ntpd-sync and klogd-start
-	local LINE LINE_EPOCH STAGE='start'
+	local LINE LINE_EPOCH STAGE='searching'
 	while read -r LINE; do
 		[ -z "$LINE" ] && continue
-		if [ "$STAGE" = 'start' ]; then
-			if [ -z "${LINE##*"ntpd: Initial clock set"}" ]; then
-				STAGE='middle'
+		if [ "$STAGE" = 'searching' ]; then
+			# Make sure it's this boot, 5s is pretty generous (ntp-sync log message ± service-event)
+			if [ "${LINE:16}" = 'ntpd: Initial clock set' ] && LINE_EPOCH=$((SYNC_EPOCH - $(date -D '%b %e %T' -d "${LINE:0:15}" '+%s'))) 2>/dev/null && [ ${LINE_EPOCH#-} -le 5 ]; then
+				STAGE='processing'
 			fi
-		elif [ "$STAGE" = 'middle' ]; then
-			if [ -z "${LINE##*"klogd started: BusyBox"*}" ]; then
-				STAGE='end'
+		elif [ "$STAGE" = 'processing' ]; then
+			if [ "${LINE:16:30}" = 'klogd started: BusyBox' ]; then
+				STAGE='processed'
+			elif [ "${LINE:16}" = 'ntpd: Initial clock set' ]; then
+				# Went past klogd start somehow
+				STAGE='error'
+				break
 			fi
-			LINE_EPOCH="$(date -D '%b %e %T' -d "${LINE:0:15}" '+%s')"
-			LINE="$(date -d "@$((LINE_EPOCH + OFFSET))" '+%b %e %H:%M:%S')${LINE:15}"
+			if LINE_EPOCH="$(date -D '%b %e %T' -d "${LINE:0:15}" '+%s')"; then
+				LINE="$(date -d "@$((LINE_EPOCH + OFFSET))" '+%b %e %H:%M:%S')${LINE:15}"
+			else
+				STAGE='error'
+				break
+			fi
 		fi
 		printf '%s\n' "$LINE" >> /tmp/fixlog.tmp
 	done < /tmp/revlog.tmp
 
-	# Only append changes if processed properly
-	if [ "$STAGE" = 'end' ]; then
+	# Only apply changes if processed properly
+	if [ "$STAGE" = 'processed' ]; then
 		tac /tmp/fixlog.tmp > /tmp/syslog.log
 		rm -f /tmp/syslog.log-1
 	fi
@@ -100,6 +112,8 @@ web_mount() {
 			# Up to date, nothing to do here
 			unset TIMESTAMP
 		fi
+	elif mount | grep -Fq '/www/Main_LogStatus_Content.asp'; then
+		umount '/www/Main_LogStatus_Content.asp'
 	fi
 
 	# Make new file
@@ -107,24 +121,33 @@ web_mount() {
 		mkdir -p "$(dirname "$SYSLOG_WWW")"
 		cp '/www/Main_LogStatus_Content.asp' "$SYSLOG_WWW"
 
-		# Include our js file
-		sed -i -e '/src="\/js\/jquery\.js"/a\' -e '<script language="JavaScript" type="text\/javascript" src="\/user\/loggyparser\.js"><\/script>' "$SYSLOG_WWW"
+		sed -i -f - "$SYSLOG_WWW" <<-'EOSCRIPT'
+			#!/bin/sed -f
 
-		# Peform an update on page load
-		sed -i '/\/\/make Scroll_y bottom/{n;s/5000/0/}' "$SYSLOG_WWW"
+			# Include our files
+			/form_style\.css/a\
+			<link rel="stylesheet" type="text\/css" href="\/user\/logng_style\.css">\n<script language="JavaScript" type="text\/javascript" src="\/user\/logng\.js"><\/script>
 
-		# read syslog in /www/user/
-		sed -i "s/url: '\/ajax_log_data\.asp'/url: '\/user\/syslog\.html'/" "$SYSLOG_WWW"
-		sed -i "s/dataType: 'script'/dataType: 'text'/" "$SYSLOG_WWW"
+			# Peform an update on page load
+			/scrollTop = 9999999/{N;s/.*/setTimeout("get_log_data();", 0);/}
 
-		# Process log
-		sed -i -e '/innerHTML = logString/c\' -e 'append_to_log(response, "<% nvram_get("log_level"); %>");' "$SYSLOG_WWW"
+			# Read syslog as text instead of script
+			s/dataType: 'script'/dataType: 'text'/
 
-		# Remove initial nvram dump
-		sed -i 's/<% nvram_dump("syslog.log",""); %>//' "$SYSLOG_WWW"
+			# Process log
+			/innerHTML = logString/c\
+			processLogFile(response.slice(31,-30));
+
+			# Use table instead of textarea
+			/id="textarea"/c\
+			<div id="syslogContainer">\n<table id="syslogTable" class="nohost nofacility">\n<thead>\n<tr>\n<th colspan="5">Raw<\/th>\n<th>Facility<\/th>\n<th>Time<\/th>\n<th>Hostname<\/th>\n<th>Source<\/th>\n<th>Message<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<\/tbody>\n<\/table>\n<\/div>
+
+			s/getElementById("textarea").style/getElementById("syslogContainer").style/
+			s/\$("#textarea")/\$("#syslogContainer")/g
+		EOSCRIPT
 
 		# Add source file timestamp
-		printf "%s\n" "<!-- Source timestamp: $TIMESTAMP -->" >> "$SYSLOG_WWW"
+		printf '%s\n' "<!-- Source timestamp: $TIMESTAMP -->" >> "$SYSLOG_WWW"
 	fi
 
 	# Mount over stock file
@@ -132,10 +155,11 @@ web_mount() {
 		mount -o bind "$SYSLOG_WWW" '/www/Main_LogStatus_Content.asp'
 	fi
 
-	# Make the logs readable from www
-	[ ! -L /www/user/syslog.html ] && ln -s /tmp/syslog.log /www/user/syslog.html
-	# Link to our javascript
-	[ ! -L /www/user/loggyparser.js ] && ln -s /jffs/www/loggyparser.js /www/user/loggyparser.js
+	# Link to our files
+	local FILE
+	for FILE in logng.js logng_worker.js logng_style.css; do
+		[ ! -L "/www/user/$FILE" ] && ln -s "/jffs/www/$FILE" "/www/user/$FILE"
+	done
 }
 
 # Wait for a process to spawn then kill it
@@ -156,15 +180,23 @@ waitkill() {
 # Kill the stock syslog in preperation for syslog-ng
 # Usage: pre_syslog
 pre_syslog() {
-	# Do nothing if it's not going to be started
-	[ "$ENABLED" != 'yes' ] && return
+	# Do nothing if it's not enabled
+	if [ "$ENABLED" != 'yes' ]; then
+		false; return $?
+	fi
+
+	# Don't run until time is set
+	if [ "$(nvram get ntp_ready)" != '1' ]; then
+		touch /tmp/.ntpwait-syslogng
+		false; return $?
+	fi
 
 	# kill any/all running klogd and/or syslogd
 	pidof klogd &>/dev/null && killall klogd
 	pidof syslogd &>/dev/null && killall syslogd
 
 	# While nothing is logging lets see if we can fix the timestamps
-	[ "$(nvram get ntp_ready)" = '1' ] && fixtime
+	fixtime
 
 	# Append stock logs
 	if [ ! -L /tmp/syslog.log ]; then
@@ -185,6 +217,8 @@ pre_syslog() {
 
 	# set logrotate to... rotate
 	{ crontab -l 2>/dev/null | grep -v '#logrotate#$'; echo '5 0 * * * /opt/sbin/logrotate /opt/etc/logrotate.conf >> /opt/tmp/logrotate.daily 2>&1 #logrotate#'; } | crontab -
+
+	true; return $?
 }
 
 # Start the stock syslog after terminating syslog-ng
@@ -208,14 +242,18 @@ EVENT="$1"
 shift
 case "$EVENT" in
 	'init-start')
-		printf '%s %s\n' "$(awk -F. '{print $1}' < /proc/uptime)" "$(date '+%s')" > /tmp/.fixtime
+		printf '%s %s\n' "$(awk -F. '{print $1}' < /proc/uptime)" "$(date '+%s')" > /tmp/.time-init
 		web_mount
 	;;
 	'service-event')
 		if [ "$1_$2" = 'restart_diskmon' ]; then
-			if [ "$(nvram get ntp_ready)" = '1' ] && [ -f /tmp/.ntpwait-syslogng ]; then
-				rm /tmp/.ntpwait-syslogng
-				[ -x /opt/etc/init.d/S01syslog-ng ] && /opt/etc/init.d/S01syslog-ng start
+			if [ "$(nvram get ntp_ready)" = '1' ] && [ ! -f /tmp/.time-sync ]; then
+				# Initial ntp sync
+				printf '%s %s\n' "$(awk -F. '{print $1}' < /proc/uptime)" "$(date '+%s')" > /tmp/.time-sync
+				if [ -f /tmp/.ntpwait-syslogng ]; then
+					rm /tmp/.ntpwait-syslogng
+					[ -x /opt/etc/init.d/S01syslog-ng ] && /opt/etc/init.d/S01syslog-ng start
+				fi
 			fi
 		elif [ "$1" != 'stop' ] && { [ "$2" = 'logger' ] || [ "$2" = 'time' ]; } && pidof syslog-ng &>/dev/null; then
 			waitkill 'klogd' &
@@ -228,16 +266,9 @@ case "$EVENT" in
 		. /opt/etc/init.d/rc.func
 		PROC='syslog-ng'
 
-		# Don't run until time is set
-		if [ "$(nvram get ntp_ready)" != '1' ]; then
-			touch /tmp/.ntpwait-syslogng
-			ENABLED='no'
-		fi
-
 		case "$1" in
 			'start')
-				pre_syslog
-				start
+				pre_syslog && start
 			;;
 			'stop'|'kill')
 				check && stop && post_syslog
@@ -245,10 +276,10 @@ case "$EVENT" in
 			'restart')
 				if check >/dev/null; then
 					stop
+					start
 				else
-					pre_syslog
+					pre_syslog && start
 				fi
-				start
 			;;
 			'check')
 				check
@@ -294,7 +325,14 @@ case "$1" in
 
 			# Customise webUI log page
 			mkdir -p /jffs/www/
-			cat > /jffs/www/loggyparser.js <<-'EOF'
+			cat > /jffs/www/logng.js <<'EOF'
+Date.prototype.to8601String=function(){return this.getFullYear()+'-'+(this.getMonth()+1).toString().padStart(2,'0')+'-'+this.getDate().toString().padStart(2,'0')+' '+this.getHours().toString().padStart(2,'0')+':'+this.getMinutes().toString().padStart(2,'0')+':'+this.getSeconds().toString().padStart(2,'0')};String.prototype.lastIndexEnd=function(string){if(!string)return-1;var io=this.lastIndexOf(string)
+return io==-1?-1:io+string.length};var lastLine="";var syslogWorker=new Worker("/user/logng_worker.js");syslogWorker.onmessage=function(e){if(!e.data.idx)return;var row=document.getElementById("syslogTable").rows[e.data.idx];var cell=row.insertCell(-1);if(e.data.facility)cell.innerText=e.data.facility;cell=row.insertCell(-1);if(e.data.time){cell.innerText=e.data.time.to8601String();cell.setAttribute("title",e.data.time.toLocaleString())}
+cell=row.insertCell(-1);if(e.data.host)cell.innerText=e.data.host;cell=row.insertCell(-1);if(e.data.program){cell.innerText=e.data.program;if(e.data.pid)cell.setAttribute("title",`${e.data.program}[${e.data.pid}]`)}
+cell=row.insertCell(-1);if(e.data.message)cell.innerText=e.data.message;if(e.data.time&&e.data.program&&e.data.message)row.classList.add("lvl_"+(e.data.severity||"unknown"))}
+function processLogFile(file){var tbody=document.getElementById("syslogTable").getElementsByTagName("tbody")[0];file.substring(file.lastIndexEnd(lastLine)).split("\n").forEach(line=>{if(line){lastLine="\n"+line+"\n";var row=tbody.insertRow(-1);var cell=row.insertCell(-1);cell.innerText=line;cell.colSpan=5;syslogWorker.postMessage({idx:row.rowIndex,msg:line})}})}
+EOF
+			cat > /jffs/www/logng_worker.js <<'EOF'
 var FacilityIndex=['kern','user','mail','daemon','auth','syslog','lpr','news','uucp','cron','authpriv','ftp','ntp','security','console','solaris-cron','local0','local1','local2','local3','local4','local5','local6','local7'];var SeverityIndex=['emerg','alert','crit','err','warning','notice','info','debug'];var BSDDateIndex={'Jan':0,'Feb':1,'Mar':2,'Apr':3,'May':4,'Jun':5,'Jul':6,'Aug':7,'Sep':8,'Oct':9,'Nov':10,'Dec':11};var LoggyParser=function(){};LoggyParser.prototype.parse=function(rawMessage,callback){if(typeof rawMessage!='string'){return rawMessage}
 var parsedMessage={originalMessage:rawMessage};var rightMessage=rawMessage;var segment=rightMessage.match(/^<(\d+)>\s*/);if(segment){parsedMessage.facilityID=segment[1]>>>3;parsedMessage.severityID=segment[1]&0b111;if(parsedMessage.facilityID<24&&parsedMessage.severityID<8){parsedMessage.facility=FacilityIndex[parsedMessage.facilityID];parsedMessage.severity=SeverityIndex[parsedMessage.severityID]}
 rightMessage=rightMessage.substring(segment[0].length)}
@@ -303,8 +341,10 @@ segment=rightMessage.match(/^(?:([^\s]+(?:[^\s:]|::))\s+)?([^\s]+)(?:\[(\d+)\])?
 if(parsedMessage.pid){parsedMessage.header=parsedMessage.program+"["+parsedMessage.pid+"]: "}else if(parsedMessage.program){parsedMessage.header=parsedMessage.program+": "}else{parsedMessage.header=""}
 parsedMessage.message=rightMessage;if(callback){callback(parsedMessage)}else{return parsedMessage}};LoggyParser.prototype.parseRfc3339=function(timeStamp){var utcOffset,offsetSplitChar,offsetString,offsetMultiplier=1,dateTime=timeStamp.split("T");if(dateTime.length<2)return!1;var date=dateTime[0].split("-"),time=dateTime[1].split(":"),offsetField=time[time.length-1];offsetFieldIdentifier=offsetField.charAt(offsetField.length-1);if(offsetFieldIdentifier==="Z"){utcOffset=0;time[time.length-1]=offsetField.substr(0,offsetField.length-2)}else{if(offsetField[offsetField.length-1].indexOf("+")!=-1){offsetSplitChar="+";offsetMultiplier=1}else{offsetSplitChar="-";offsetMultiplier=-1}
 offsetString=offsetField.split(offsetSplitChar);if(offsetString.length<2)return!1;time[(time.length-1)]=offsetString[0];offsetString=offsetString[1].split(":");utcOffset=(offsetString[0]*60)+offsetString[1];utcOffset=utcOffset*60*1000}
-var parsedTime=new Date(Date.UTC(date[0],date[1]-1,date[2],time[0],time[1],time[2])+(utcOffset*offsetMultiplier));return parsedTime};LoggyParser.prototype.parse8601=function(timeStamp){var parsedTime=new Date(Date.parse(timeStamp));if(parsedTime instanceof Date&&!isNaN(parsedTime))return parsedTime;return!1};Date.prototype.to8601String=function(){return this.getFullYear()+'-'+(this.getMonth()+1).toString().padStart(2,'0')+'-'+this.getDate().toString().padStart(2,'0')+' '+this.getHours().toString().padStart(2,'0')+':'+this.getMinutes().toString().padStart(2,'0')+':'+this.getSeconds().toString().padStart(2,'0')};String.prototype.lastIndexEnd=function(string){var io=this.lastIndexOf(string)
-return(string.length==0||io==-1)?-1:io+string.length};var lastLine="";var syslogParser=new LoggyParser();function append_to_log(lines,log_level){lines.substring(lines.lastIndexEnd(lastLine)).split("\n").filter(i=>i).forEach(line=>syslogParser.parse(line,(msg)=>{lastLine="\n"+msg.originalMessage+"\n";if(msg.severityID==null||msg.severityID<log_level){document.getElementById("textarea").innerHTML+=msg.time.to8601String()+" "+msg.header+msg.message+"\n"}}))}
+var parsedTime=new Date(Date.UTC(date[0],date[1]-1,date[2],time[0],time[1],time[2])+(utcOffset*offsetMultiplier));return parsedTime};LoggyParser.prototype.parse8601=function(timeStamp){var parsedTime=new Date(Date.parse(timeStamp));if(parsedTime instanceof Date&&!isNaN(parsedTime))return parsedTime;return!1};var syslogParser=new LoggyParser();onmessage=function(e){syslogParser.parse(e.data.msg,(msg)=>{msg.idx=e.data.idx;postMessage(msg)})}
+EOF
+			cat > /jffs/www/logng_style.css <<'EOF'
+#syslogContainer{width:63em;height:27em;resize:both;overflow:auto;font-family:'Courier New',Courier,mono;font-size:11px}#syslogTable{table-layout:fixed;min-height:300px;border-collapse:collapse}#syslogTable th{margin:0;border:1px solid #2F3A3E;position:sticky;top:0;background:#2F3A3E;text-align:left}#syslogTable td{padding-left:2px;padding-right:2px;margin:0;border:1px solid gray;overflow:hidden;white-space:nowrap}#syslogTable th:first-of-type,#syslogTable tr.lvl_unknown td:first-of-type,#syslogTable tr.lvl_emerg td:first-of-type,#syslogTable tr.lvl_alert td:first-of-type,#syslogTable tr.lvl_crit td:first-of-type,#syslogTable tr.lvl_err td:first-of-type,#syslogTable tr.lvl_warning td:first-of-type,#syslogTable tr.lvl_notice td:first-of-type,#syslogTable tr.lvl_info td:first-of-type,#syslogTable tr.lvl_debug td:first-of-type,#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type){display:none}#syslogTable th,#syslogTable td{width:0}#syslogTable td:first-of-type,#syslogTable th:last-of-type,#syslogTable td:last-of-type{width:auto;overflow:scroll}#syslogTable.nofacility th:nth-of-type(2),#syslogTable.nofacility td:nth-of-type(2){display:none}#syslogTable.nohost th:nth-of-type(4),#syslogTable.nohost td:nth-of-type(4){display:none}
 EOF
 			(. /jffs/scripts/.logng.event.sh; web_mount)
 		else
@@ -323,6 +363,9 @@ EOF
 
 		# Remove webUI changes
 		mount | grep -Fq '/www/Main_LogStatus_Content.asp' && umount '/www/Main_LogStatus_Content.asp'
-		rm -f '/jffs/www/loggyparser.js' '/www/loggyparser.js' '/jffs/www/Main_LogStatus_Content.asp'
+		rm -f '/jffs/www/Main_LogStatus_Content.asp'
+		for FILE in logng.js logng_worker.js logng_style.css; do
+			rm -f "/jffs/www/$FILE" "/www/user/$FILE"
+		done
 	;;
 esac
