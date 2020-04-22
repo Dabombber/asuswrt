@@ -72,7 +72,7 @@ fixtime() {
 				STAGE='processing'
 			fi
 		elif [ "$STAGE" = 'processing' ]; then
-			if [ "${LINE:16:30}" = 'klogd started: BusyBox' ]; then
+			if [ "${LINE:16:30}" = 'kernel: klogd started: BusyBox' ]; then
 				STAGE='processed'
 			elif [ "${LINE:16}" = 'ntpd: Initial clock set' ]; then
 				# Went past klogd start somehow
@@ -134,16 +134,17 @@ web_mount() {
 			# Read syslog as text instead of script
 			s/dataType: 'script'/dataType: 'text'/
 
-			# Process log
-			/innerHTML = logString/c\
-			processLogFile(response.slice(31,-30));
+			s/getElementById("textarea").style/getElementById("syslogContainer").style/
+			s/\$("#textarea")/\$("#syslogContainer")/g
+
+			# Replace success function
+			/var h = 0;/d
+			s/var height = 0;/var autoscroll = true;/
+			/function(response){/{n;N;N;N;N;s/.*/if((document\.getElementById("auto_refresh")\.checked)){\nlet el = document\.getElementById("syslogContainer");\nif(el\.scrollHeight - el\.scrollTop - el\.clientHeight <= 1) autoscroll = true;\nprocessLogFile(response\.slice(31,-30));\nif(autoscroll) \$("#syslogContainer")\.animate({ scrollTop: 9999999 }, "slow");\nautoscroll = false;/}
 
 			# Use table instead of textarea
 			/id="textarea"/c\
-			<div id="syslogContainer">\n<table id="syslogTable" class="nohost nofacility">\n<thead>\n<tr>\n<th colspan="5">Raw<\/th>\n<th>Facility<\/th>\n<th>Time<\/th>\n<th>Hostname<\/th>\n<th>Source<\/th>\n<th>Message<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<\/tbody>\n<\/table>\n<\/div>
-
-			s/getElementById("textarea").style/getElementById("syslogContainer").style/
-			s/\$("#textarea")/\$("#syslogContainer")/g
+			<div id="syslogContainer">\n<table id="syslogTable" class="nohost nofacility">\n<colgroup>\n<col>\n<\/colgroup>\n<thead>\n<tr>\n<th colspan="5">Raw<\/th>\n<th>Facility<\/th>\n<th>Time<\/th>\n<th>Hostname<\/th>\n<th>Source<\/th>\n<th>Message<\/th>\n<\/tr>\n<\/thead>\n<tbody>\n<\/tbody>\n<\/table>\n<\/div>
 		EOSCRIPT
 
 		# Add source file timestamp
@@ -344,7 +345,7 @@ offsetString=offsetField.split(offsetSplitChar);if(offsetString.length<2)return!
 var parsedTime=new Date(Date.UTC(date[0],date[1]-1,date[2],time[0],time[1],time[2])+(utcOffset*offsetMultiplier));return parsedTime};LoggyParser.prototype.parse8601=function(timeStamp){var parsedTime=new Date(Date.parse(timeStamp));if(parsedTime instanceof Date&&!isNaN(parsedTime))return parsedTime;return!1};var syslogParser=new LoggyParser();onmessage=function(e){syslogParser.parse(e.data.msg,(msg)=>{msg.idx=e.data.idx;postMessage(msg)})}
 EOF
 			cat > /jffs/www/logng_style.css <<'EOF'
-#syslogContainer{width:63em;height:27em;resize:both;overflow:auto;font-family:'Courier New',Courier,mono;font-size:11px}#syslogTable{table-layout:fixed;min-height:300px;border-collapse:collapse}#syslogTable th{margin:0;border:1px solid #2F3A3E;position:sticky;top:0;background:#2F3A3E;text-align:left}#syslogTable td{padding-left:2px;padding-right:2px;margin:0;border:1px solid gray;overflow:hidden;white-space:nowrap}#syslogTable th:first-of-type,#syslogTable tr.lvl_unknown td:first-of-type,#syslogTable tr.lvl_emerg td:first-of-type,#syslogTable tr.lvl_alert td:first-of-type,#syslogTable tr.lvl_crit td:first-of-type,#syslogTable tr.lvl_err td:first-of-type,#syslogTable tr.lvl_warning td:first-of-type,#syslogTable tr.lvl_notice td:first-of-type,#syslogTable tr.lvl_info td:first-of-type,#syslogTable tr.lvl_debug td:first-of-type,#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type){display:none}#syslogTable th,#syslogTable td{width:0}#syslogTable td:first-of-type,#syslogTable th:last-of-type,#syslogTable td:last-of-type{width:auto;overflow:scroll}#syslogTable.nofacility th:nth-of-type(2),#syslogTable.nofacility td:nth-of-type(2){display:none}#syslogTable.nohost th:nth-of-type(4),#syslogTable.nohost td:nth-of-type(4){display:none}
+#syslogContainer{width:68em;height:45em;resize:both;overflow:auto;font-family:'Courier New',Courier,mono;font-size:11px}#syslogTable{table-layout:fixed;min-height:300px;border-collapse:collapse}#syslogTable th{margin:0;position:sticky;top:0;background:#2F3A3E;text-align:left;padding-left:5px}#syslogTable td{padding-left:2px;padding-right:2px;margin:0;border:1px solid gray;overflow:hidden;white-space:nowrap}#syslogTable col:first-of-type{border-left:2px solid #2F3A3E}#syslogTable td:last-of-type,#syslogTable th:last-of-type,#syslogTable td:first-of-type{border-right:2px solid #2F3A3E}#syslogTable tr:last-of-type{border-bottom:2px solid #2F3A3E}#syslogTable th:first-of-type,#syslogTable tr.lvl_unknown td:first-of-type,#syslogTable tr.lvl_emerg td:first-of-type,#syslogTable tr.lvl_alert td:first-of-type,#syslogTable tr.lvl_crit td:first-of-type,#syslogTable tr.lvl_err td:first-of-type,#syslogTable tr.lvl_warning td:first-of-type,#syslogTable tr.lvl_notice td:first-of-type,#syslogTable tr.lvl_info td:first-of-type,#syslogTable tr.lvl_debug td:first-of-type,#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type){display:none}#syslogTable th,#syslogTable td{width:0}#syslogTable td:first-of-type,#syslogTable th:last-of-type,#syslogTable td:last-of-type{width:auto;overflow:scroll}#syslogTable.nofacility th:nth-of-type(2),#syslogTable.nofacility td:nth-of-type(2){display:none}#syslogTable.nohost th:nth-of-type(4),#syslogTable.nohost td:nth-of-type(4){display:none}#syslogTable tr.lvl_emerg{background-color:black}#syslogTable tr.lvl_alert{background-color:maroon}#syslogTable tr.lvl_crit{background-color:crimson}#syslogTable tr.lvl_err{background-color:darkorange}#syslogTable tr.lvl_warning{background-color:goldenrod}#syslogTable tr.lvl_notice{background-color:midnightblue}#syslogTable tr.lvl_info{background-color:steelblue}#syslogTable tr.lvl_debug{background-color:slategray}
 EOF
 			(. /jffs/scripts/.logng.event.sh; web_mount)
 		else
