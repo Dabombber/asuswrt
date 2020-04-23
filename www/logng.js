@@ -14,7 +14,6 @@ String.prototype.lastIndexEnd = function(string) {
 };
 
 var lastLine = "";
-var severityList = ['emerg','alert','crit','err','warning','notice','info','debug'];
 var syslogWorker = new Worker("/user/logng_worker.js");
 
 syslogWorker.onmessage = function(e) {
@@ -62,15 +61,18 @@ function processLogFile(file) {
 	});
 }
 
+// Debug means no filter, so no need to include
+var filterList = ['emerg','alert','crit','err','warning','notice','info'];
+
 function filterSeverity(selectObject) {
 	var table = document.getElementById("syslogTable");
-	for (const severity of severityList) {
+	for (const severity of filterList) {
 		table.classList.toggle("filter_" + severity, selectObject.value == severity);
 	}
 }
 
 function initSeverity() {
-	if(0 <= <% nvram_get("log_level"); %> && <% nvram_get("log_level"); %> <= 7) {
-		document.getElementById("syslogTable").classList.add("filter_" + severityList[<% nvram_get("log_level"); %>])
+	if(0 < <% nvram_get("log_level"); %> && <% nvram_get("log_level"); %> < 8) {
+		document.getElementById("syslogTable").classList.add("filter_" + filterList[<% nvram_get("log_level"); %> - 1])
 	}
 }

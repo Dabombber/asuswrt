@@ -101,9 +101,16 @@
 }
 
 /* Priority filtering */
-#syslogTable.filter_alert tr.lvl_unknown,
-#syslogTable.filter_alert tr.lvl_emerg,
-#syslogTable.filter_alert tr.lvl_alert,
+#syslogTable.filter_emerg tr.lvl_alert,
+#syslogTable.filter_emerg tr.lvl_crit,
+#syslogTable.filter_emerg tr.lvl_err,
+#syslogTable.filter_emerg tr.lvl_warning,
+#syslogTable.filter_emerg tr.lvl_notice,
+#syslogTable.filter_emerg tr.lvl_info,
+#syslogTable.filter_emerg tr.lvl_debug {
+	display: none;
+}
+
 #syslogTable.filter_alert tr.lvl_crit,
 #syslogTable.filter_alert tr.lvl_err,
 #syslogTable.filter_alert tr.lvl_warning,
@@ -134,12 +141,12 @@
 	display: none;
 }
 
-#syslogTable.filter_info tr.lvl_info,
-#syslogTable.filter_info tr.lvl_debug {
+#syslogTable.filter_notice tr.lvl_info,
+#syslogTable.filter_notice tr.lvl_debug {
 	display: none;
 }
 
-#syslogTable.filter_debug tr.lvl_debug {
+#syslogTable.filter_info tr.lvl_debug {
 	display: none;
 }
 
@@ -152,4 +159,3 @@
 label[for="severity"] {
     padding-left: 5px;
 }
-
