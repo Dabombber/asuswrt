@@ -14,6 +14,7 @@ String.prototype.lastIndexEnd = function(string) {
 };
 
 var lastLine = "";
+var severityList = ['emerg','alert','crit','err','warning','notice','info','debug'];
 var syslogWorker = new Worker("/user/logng_worker.js");
 
 syslogWorker.onmessage = function(e) {
@@ -21,12 +22,15 @@ syslogWorker.onmessage = function(e) {
 	var row = document.getElementById("syslogTable").rows[e.data.idx];
 
 	var cell = row.insertCell(-1);
-	if (e.data.facility) cell.innerText = e.data.facility;
+	if (e.data.facility) {
+		cell.innerText = e.data.facility;
+		if(e.data.severity) cell.setAttribute("title", e.data.severity);
+	}
 
 	cell = row.insertCell(-1);
 	if (e.data.time) {
 		cell.innerText = e.data.time.to8601String();
-		cell.setAttribute("title", e.data.time.toLocaleString());
+		cell.setAttribute("title", e.data.time.toString());
 	}
 
 	cell = row.insertCell(-1);
@@ -56,4 +60,17 @@ function processLogFile(file) {
 			syslogWorker.postMessage({idx: row.rowIndex, msg: line});
 		}
 	});
+}
+
+function filterSeverity(selectObject) {
+	var table = document.getElementById("syslogTable");
+	for (const severity of severityList) {
+		table.classList.toggle("filter_" + severity, selectObject.value == severity);
+	}
+}
+
+function initSeverity() {
+	if(0 <= <% nvram_get("log_level"); %> && <% nvram_get("log_level"); %> <= 7) {
+		document.getElementById("syslogTable").classList.add("filter_" + severityList[<% nvram_get("log_level"); %>])
+	}
 }

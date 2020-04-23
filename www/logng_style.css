@@ -65,12 +65,12 @@
 }
 
 /* Toggle columns */
-#syslogTable.nofacility th:nth-of-type(2),
-#syslogTable.nofacility td:nth-of-type(2) {
+#syslogTable:not(.facility) th:nth-of-type(2),
+#syslogTable:not(.facility) td:nth-of-type(2) {
 	display: none;
 }
-#syslogTable.nohost th:nth-of-type(4),
-#syslogTable.nohost td:nth-of-type(4) {
+#syslogTable:not(.hostname) th:nth-of-type(4),
+#syslogTable:not(.hostname) td:nth-of-type(4) {
 	display: none;
 }
 
@@ -99,3 +99,57 @@
 #syslogTable tr.lvl_debug {
 	background-color: slategray;
 }
+
+/* Priority filtering */
+#syslogTable.filter_alert tr.lvl_unknown,
+#syslogTable.filter_alert tr.lvl_emerg,
+#syslogTable.filter_alert tr.lvl_alert,
+#syslogTable.filter_alert tr.lvl_crit,
+#syslogTable.filter_alert tr.lvl_err,
+#syslogTable.filter_alert tr.lvl_warning,
+#syslogTable.filter_alert tr.lvl_notice,
+#syslogTable.filter_alert tr.lvl_info,
+#syslogTable.filter_alert tr.lvl_debug {
+	display: none;
+}
+
+#syslogTable.filter_crit tr.lvl_err,
+#syslogTable.filter_crit tr.lvl_warning,
+#syslogTable.filter_crit tr.lvl_notice,
+#syslogTable.filter_crit tr.lvl_info,
+#syslogTable.filter_crit tr.lvl_debug {
+	display: none;
+}
+
+#syslogTable.filter_err tr.lvl_warning,
+#syslogTable.filter_err tr.lvl_notice,
+#syslogTable.filter_err tr.lvl_info,
+#syslogTable.filter_err tr.lvl_debug {
+	display: none;
+}
+
+#syslogTable.filter_warning tr.lvl_notice,
+#syslogTable.filter_warning tr.lvl_info,
+#syslogTable.filter_warning tr.lvl_debug {
+	display: none;
+}
+
+#syslogTable.filter_info tr.lvl_info,
+#syslogTable.filter_info tr.lvl_debug {
+	display: none;
+}
+
+#syslogTable.filter_debug tr.lvl_debug {
+	display: none;
+}
+
+/* Severity selector */
+#severityContainer {
+	display: inline-block;
+	padding-left: 10px;
+}
+
+label[for="severity"] {
+    padding-left: 5px;
+}
+
