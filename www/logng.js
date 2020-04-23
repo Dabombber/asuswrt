@@ -65,10 +65,13 @@ function processLogFile(file) {
 var filterList = ['emerg','alert','crit','err','warning','notice','info'];
 
 function filterSeverity(selectObject) {
+	var container = document.getElementById("syslogContainer");
+	var rescroll = (container.scrollHeight - container.scrollTop - container.clientHeight <= 1);
 	var table = document.getElementById("syslogTable");
 	for (const severity of filterList) {
 		table.classList.toggle("filter_" + severity, selectObject.value == severity);
 	}
+	if(rescroll && !(container.scrollHeight - container.scrollTop - container.clientHeight <= 1)) $(container).animate({ scrollTop: container.scrollHeight - container.clientHeight }, "slow");
 }
 
 function initSeverity() {
