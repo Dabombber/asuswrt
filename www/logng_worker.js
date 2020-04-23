@@ -131,13 +131,18 @@ LoggyParser.prototype.parse = function(rawMessage, callback) {
 	}
 
 	// Hostname Program[Pid]:
-	segment = rightMessage.match(/^(?:([^\s]+(?:[^\s:]|::))\s+)?([^\s]+)(?:\[(\d+)\])?:\s+/);
+	segment = rightMessage.match(/^(?:([^\s]+(?:[^\s:]|::))\s+)?([^\s]+):\s+/);
 	if(segment) {
 		parsedMessage.host = segment[1];
 		parsedMessage.program = segment[2];
-		parsedMessage.pid = segment[3];
 
 		rightMessage = rightMessage.substring(segment[0].length);
+
+		segment = parsedMessage.program.match(/\[(\d+)\]$/);
+		if(segment) {
+			parsedMessage.pid = segment[1];
+			parsedMessage.program = parsedMessage.program.slice(0, -segment[0].length);
+		}
 	}
 
 	// Header shortcut
