@@ -1,4 +1,4 @@
-# Scripts
+# Asuswrt-Merlin Scripts and configs
 
 Most scripts which trigger off Asuswrt-Merlin events use a single line in the `/jffs/scripts/<event-script>` file (to make addition/removal easier), in the form `. /jffs/scripts/.<script>.event.sh <event-script> "$@" ## script ##`.
 The exception to this is `services-start`/`services-stop` and `post-mount`/`unmount`, where a line is added to run scripts from the `/jffs/scripts/services.d` and `/jffs/scripts/mount.d` folders respectively. Scripts in these folders prefixed with `S##` (where # is a number) will be run on the start/mount event, and those prefixed with `K##` will be run on the stop/unmount event, allowing better run order control.
@@ -73,7 +73,30 @@ Installer for entware.
 
 ### logng.sh
 
-Adds scripts to help run syslog-ng. syslog-ng startup is delayed if ntp isn't synced, and when switching from syslogd/klogd to syslog-ng, timestamps from before ntp sync are corrected. The `/www/Main_LogStatus_Content.asp` file is mounted over and changed to show logs in a table instead of a textarea.
+Adds scripts to help run syslog-ng. syslog-ng startup is delayed if ntp isn't synced, and when switching from syslogd/klogd to syslog-ng, timestamps from before ntp sync are corrected. The `/www/Main_LogStatus_Content.asp` file is mounted over, and changed to show logs in a table instead of a textarea.
+
+The layout of the table is below. The colgroup is just added to make styling the first column easier since it could be either Raw, Facility or Time depending on view settings.
+```html
+<div id="syslogContainer">
+	<table id="syslogTable">
+		<colgroup>
+			<col>
+		</colgroup>
+		<thead>
+			<tr>
+				<th colspan="5">Raw</th>
+				<th>Facility</th>
+				<th>Time</th>
+				<th>Hostname</th>
+				<th>Source</th>
+				<th>Message</th>
+			</tr>
+		</thead>
+		<tbody>
+		</tbody>
+	</table>
+</div>
+```
 
 The originals of the three [minified](https://www.minifier.org/) js/css files are in the `www` folder.
 

@@ -78,28 +78,28 @@
 
 /* Row priority colours */
 #syslogTable tr.lvl_emerg {
-	background-color: black;
+	background-color: #000000;
 }
 #syslogTable tr.lvl_alert {
-	background-color: maroon;
+	background-color: #DB78C6;
 }
 #syslogTable tr.lvl_crit {
-	background-color: crimson;
+	background-color: #CF1819;
 }
 #syslogTable tr.lvl_err {
-	background-color: darkorange;
+	background-color: #C4731F;
 }
 #syslogTable tr.lvl_warning {
-	background-color: goldenrod;
+	background-color: #B8BD25;
 }
 #syslogTable tr.lvl_notice {
-	background-color: midnightblue;
+	background-color: #2496B3;
 }
 #syslogTable tr.lvl_info {
-	background-color: steelblue;
+	background-color: #6F7374;
 }
 #syslogTable tr.lvl_debug {
-	background-color: slategray;
+	background-color: #449E74;
 }
 
 /* Priority filtering */

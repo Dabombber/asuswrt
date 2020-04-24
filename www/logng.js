@@ -49,6 +49,7 @@ syslogWorker.onmessage = function(e) {
 
 function processLogFile(file) {
 	var tbody = document.getElementById("syslogTable").getElementsByTagName("tbody")[0];
+	var added = 0;
 	file.substring(file.lastIndexEnd(lastLine)).split("\n").forEach(line => {
 		if (line) {
 			lastLine = "\n" + line + "\n";
@@ -57,8 +58,10 @@ function processLogFile(file) {
 			cell.innerText = line;
 			cell.colSpan = 5;
 			syslogWorker.postMessage({idx: row.rowIndex, msg: line});
+			added++;
 		}
 	});
+	return added;
 }
 
 // Debug means no filter, so no need to include
