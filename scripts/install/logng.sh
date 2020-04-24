@@ -207,7 +207,7 @@ pre_syslog() {
 
 	# Append stock logs
 	if [ ! -L /tmp/syslog.log ]; then
-		if [ -s /tmp/syslog.log-1 ] && ! printf '%s\n' "$SYSLOG_HEADER" | cmp -s /tmp/syslog_log-1; then
+		if [ -s /tmp/syslog.log-1 ] && ! printf '%s\n' "$SYSLOG_HEADER" | cmp -s /tmp/syslog.log-1; then
 			cat /tmp/syslog.log-1 /tmp/syslog.log >> /opt/var/log/messages
 		else
 			cat /tmp/syslog.log >> /opt/var/log/messages
@@ -233,7 +233,7 @@ pre_syslog() {
 post_syslog() {
 	# Remove symlinks and blocking folders
 	[ -L /tmp/syslog.log ] && rm -f /tmp/syslog.log
-	printf '%s\n' "$SYSLOG_HEADER" | cmp -s /tmp/syslog_log-1 && rm -f /tmp/syslog_log-1
+	printf '%s\n' "$SYSLOG_HEADER" | cmp -s /tmp/syslog.log-1 && rm -f /tmp/syslog.log-1
 	[ -d /jffs/syslog.log ] && rm -rf /jffs/syslog.log
 	[ -d /jffs/syslog.log-1 ] && rm -rf /jffs/syslog.log-1
 
