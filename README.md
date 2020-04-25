@@ -1,4 +1,4 @@
-# Asuswrt-Merlin Scripts and configs
+# Asuswrt-Merlin scripts and configs
 
 Most scripts which trigger off Asuswrt-Merlin events use a single line in the `/jffs/scripts/<event-script>` file (to make addition/removal easier), in the form `. /jffs/scripts/.<script>.event.sh <event-script> "$@" ## script ##`.
 The exception to this is `services-start`/`services-stop` and `post-mount`/`unmount`, where a line is added to run scripts from the `/jffs/scripts/services.d` and `/jffs/scripts/mount.d` folders respectively. Scripts in these folders prefixed with `S##` (where # is a number) will be run on the start/mount event, and those prefixed with `K##` will be run on the stop/unmount event, allowing better run order control.

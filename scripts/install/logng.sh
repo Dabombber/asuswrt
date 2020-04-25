@@ -140,7 +140,7 @@ web_mount() {
 			# Replace success function
 			/var h = 0;/d
 			s/var height = 0;/var autoscroll = true;/
-			/function(response){/{n;N;N;N;N;s/.*/if((document\.getElementById("auto_refresh")\.checked)){\nlet el = document\.getElementById("syslogContainer");\nif(el\.scrollHeight - el\.scrollTop - el\.clientHeight <= 1) autoscroll = true;\nif(processLogFile(response\.slice(31,-30)) > 0 \&\& autoscroll) \$(el)\.animate({ scrollTop: el.scrollHeight - el.clientHeight }, "slow");\nautoscroll = false;/}
+			/function(response){/{n;N;N;N;N;s/.*/if((document\.getElementById("auto_refresh")\.checked)){\nlet el = document\.getElementById("syslogContainer");\nif(el\.scrollHeight - el\.scrollTop - el\.clientHeight <= 1) autoscroll = true;\nif(processLogFile(response\.slice(30,-30)) > 0 \&\& autoscroll) \$(el)\.animate({ scrollTop: el.scrollHeight - el.clientHeight }, "slow");\nautoscroll = false;/}
 
 			# Add checkboxes for togglable columns and severity selector
 			s/style="color:#FFCC00;/&padding-top:10px;/
