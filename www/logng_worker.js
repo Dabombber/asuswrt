@@ -9,6 +9,7 @@
 
 /*
  *  These values replace the integers in message that define the facility.
+ *    ntp, security, console and solaris-cron used internally
  */
 var FacilityIndex = [
 	'kern',
@@ -36,6 +37,38 @@ var FacilityIndex = [
 	'local6',
 	'local7'
 ];
+var FacilityMap = {
+	// syslog-ng
+	'kern': 0,
+	'user': 1,
+	'mail': 2,
+	'daemon': 3,
+	'auth': 4,
+	'syslog': 5,
+	'lpr': 6,
+	'news': 7,
+	'uucp': 8,
+	'cron': 9,
+	'authpriv': 10,
+	'ftp': 11,
+	'ntp': 12,
+	'security': 13,
+	'console': 14,
+	'solaris-cron': 15,
+	'local0': 16,
+	'local1': 17,
+	'local2': 18,
+	'local3': 19,
+	'local4': 20,
+	'local5': 21,
+	'local6': 22,
+	'local7': 23,
+
+	// rsyslog
+	'logaudit': 13,
+	'logalert': 14,
+	'clock': 15
+};
 
 /*
  *  These values replace the integers in message that define the severity.
@@ -50,11 +83,26 @@ var SeverityIndex = [
 	'info',
 	'debug'
 ];
+var SeverityMap = {
+	'emerg': 0,
+	'alert': 1,
+	'crit': 2,
+	'err': 3,
+	'warning': 4,
+	'notice': 5,
+	'info': 6,
+	'debug': 7,
+
+	// deprecated
+	'panic': 0,
+	'error': 3,
+	'warn': 4
+};
 
 /*
  *  Defines the range matching BSD style months to integers.
  */
-var BSDDateIndex = {
+var BSDDateMap = {
 	'Jan': 0,
 	'Feb': 1,
 	'Mar': 2,
@@ -118,7 +166,7 @@ LoggyParser.prototype.parse = function(rawMessage, callback) {
 	// Date
 	segment = rightMessage.match(/^(\d{4}\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+/);
 	if(segment) {
-		parsedMessage.time = new Date(segment[1] || (new Date()).getUTCFullYear(), BSDDateIndex[segment[2]], segment[3], segment[4], segment[5], segment[6]);
+		parsedMessage.time = new Date(segment[1] || (new Date()).getUTCFullYear(), BSDDateMap[segment[2]], segment[3], segment[4], segment[5], segment[6]);
 		rightMessage = rightMessage.substring(segment[0].length);
 	} else {
 		segment = rightMessage.match(/^([^\s]+)\s+/);
@@ -130,11 +178,19 @@ LoggyParser.prototype.parse = function(rawMessage, callback) {
 		}
 	}
 
-	// Hostname Program[Pid]:
-	segment = rightMessage.match(/^(?:([^\s]+(?:[^\s:]|::))\s+)?([^\s]+):\s+/);
+	// Hostname facility.level Program[Pid]:
+	segment = rightMessage.match(/^(?:([^\s]*(?:[^\s:]|::))\s+(?:(kern|user|mail|daemon|auth|security|syslog|lpr|news|uucp|cron|authpriv|ftp|ntp|security|logaudit|console|logalert|solaris-cron|clock|local[0-7])\.(emerg|panic|alert|crit|err|error|warn|warning|notice|info|debug)\s+)?)?([^\s]+):\s+/);
 	if(segment) {
 		parsedMessage.host = segment[1];
-		parsedMessage.program = segment[2];
+		parsedMessage.program = segment[4];
+
+		if(segment[2] && segment[3]) {
+			parsedMessage.facilityID = FacilityMap[segment[2]];
+			parsedMessage.severityID = SeverityMap[segment[3]];
+
+			parsedMessage.facility = FacilityIndex[parsedMessage.facilityID];
+			parsedMessage.severity = SeverityIndex[parsedMessage.severityID];
+		}
 
 		rightMessage = rightMessage.substring(segment[0].length);
 
