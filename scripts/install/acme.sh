@@ -33,9 +33,8 @@ acme_scripts() {
 		fi
 
 		# Create event script
-		local ACME_ABSDIR ACME_MINUTE
-		ACME_ABSDIR="$(readlink -f -- "$ACME_DIRECTORY")"
-		ACME_ABSDIR="${ACME_ABSDIR//'/'\\''}"
+		local ACME_ESCDIR ACME_MINUTE
+		ACME_ESCDIR="${ACME_DIRECTORY//'/'\\''}"
 		ACME_MINUTE="$(awk -v min=0 -v max=59 'BEGIN{srand(); print int(min+rand()*(max-min+1))}')"
 		cat > '/jffs/scripts/.acme.event.sh' << EOF
 #!/bin/sh
@@ -47,7 +46,7 @@ case "\$SCRIPT" in
 		{ crontab -l 2>/dev/null | grep -v '#acme update#$' ; echo '$ACME_MINUTE 0 * * * /jffs/scripts/.acme.event.sh cron #acme update#'; } | crontab -
 	;;
 	'alias')
-		if [ -x '$ACME_ABSDIR/acme.sh' ]; then
+		if [ -x '$ACME_ESCDIR/acme.sh' ]; then
 			for ARG in "\$@"; do
 				case "\$ARG" in
 					'--install-cert'|'--issue') ACME_ISSUE='yes';;
@@ -61,7 +60,7 @@ case "\$SCRIPT" in
 				[ "\$ACME_KEY" != 'yes' ] && set -- "\$@" '--key-file' '/jffs/.cert/key.pem'
 				[ "\$ACME_CMD" != 'yes' ] && set -- "\$@" '--renew-hook' '/jffs/scripts/.acme.event.sh renew'
 			fi
-			'$ACME_ABSDIR/acme.sh' --home '$ACME_ABSDIR' --config-home '$ACME_ABSDIR/data' --cert-home '$ACME_ABSDIR/data/cert' "\$@"
+			'$ACME_ESCDIR/acme.sh' --home '$ACME_ESCDIR' --config-home '$ACME_ESCDIR/data' --cert-home '$ACME_ESCDIR/data/cert' "\$@"
 		else
 			echo "\$0: acme: not found" >&2
 			return 1
@@ -75,8 +74,8 @@ case "\$SCRIPT" in
 		fi
 	;;
 	'cron')
-		if [ -x '$ACME_ABSDIR/acme.sh' ]; then
-			'$ACME_ABSDIR/acme.sh' --cron --home '$ACME_ABSDIR' --config-home '$ACME_ABSDIR/data' --cert-home '$ACME_ABSDIR/data/cert' > /dev/null
+		if [ -x '$ACME_ESCDIR/acme.sh' ]; then
+			'$ACME_ESCDIR/acme.sh' --cron --home '$ACME_ESCDIR' --config-home '$ACME_ESCDIR/data' --cert-home '$ACME_ESCDIR/data/cert' > /dev/null
 		fi
 	;;
 esac
@@ -103,20 +102,18 @@ acme_install() {
 
 	curl -sL 'https://github.com/acmesh-official/acme.sh/archive/master.tar.gz' | tar xzf -
 	(
-		cd acme.sh-master || return
+		cd acme.sh-master || { false; return $?; }
 		chmod +x acme.sh
 		mkdir -p "$ACME_DIRECTORY"
-		local ACME_ABSDIR
-		ACME_ABSDIR="$(readlink -f -- "$ACME_DIRECTORY")"
-		sh acme.sh --install --noprofile --nocron --home "$ACME_ABSDIR" --config-home "$ACME_ABSDIR/data" --cert-home "$ACME_ABSDIR/data/cert" --log "$(readlink -f -- "$ACME_LOG")"
+		sh acme.sh --install --noprofile --nocron --home "$ACME_DIRECTORY" --config-home "$ACME_DIRECTORY/data" --cert-home "$ACME_DIRECTORY/data/cert" --log "$ACME_LOG"
 	)
 	rm -rf acme.sh-master
+	true; return $?;
 }
 
 case "$1" in
 	'install')
-		acme_install
-		acme_scripts 'enable'
+		acme_install && acme_scripts 'enable'
 	;;
 	'uninstall')
 		acme_scripts 'disable'

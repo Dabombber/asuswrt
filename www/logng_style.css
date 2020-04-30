@@ -1,13 +1,23 @@
 #syslogContainer {
-	width: 62em;
-	height: 42em;
+	/* Don't inherit settings */
+	all: initial;
+	display: inline-block;
+	margin-top:8px;
+
+	/* Parent container is hardcoded to 760px, 982px */
+	width: 745px;
+	height: 500px;
+
+	/* Make resizable like the textarea was */
 	resize: both;
 	overflow: auto;
+
 	font-family: 'Courier New', Courier, mono;
+	font-size: 11px;
+	color: white;
 }
 #syslogTable {
 	table-layout: fixed;
-	min-height: 300px;
 	border-collapse: collapse;
 }
 #syslogTable th {
@@ -25,7 +35,7 @@
 #syslogTable td {
 	padding-left: 2px;
 	padding-right: 2px;
-	padding-top: 0px;
+	padding-top: 1px;
 	padding-bottom: 0px;
 	margin: 0px;
 	border-bottom: 1px dotted gray;
@@ -155,10 +165,16 @@
 	display: none;
 }
 
-/* Severity selector */
-#severityContainer {
-	display: inline-block;
+
+/* Controls */
+#syslogControls {
+	color:#FFCC00;
+	padding-top:10px;
+}
+
+#syslogControls div {
 	padding-left: 10px;
+	display: inline-block;
 }
 
 label[for="severity"] {

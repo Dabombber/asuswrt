@@ -11,7 +11,7 @@
  *  These values replace the integers in message that define the facility.
  *    ntp, security, console and solaris-cron used internally
  */
-var FacilityIndex = [
+const FacilityIndex = [
 	'kern',
 	'user',
 	'mail',
@@ -37,7 +37,7 @@ var FacilityIndex = [
 	'local6',
 	'local7'
 ];
-var FacilityMap = {
+const FacilityMap = {
 	// syslog-ng
 	'kern': 0,
 	'user': 1,
@@ -73,7 +73,7 @@ var FacilityMap = {
 /*
  *  These values replace the integers in message that define the severity.
  */
-var SeverityIndex = [
+const SeverityIndex = [
 	'emerg',
 	'alert',
 	'crit',
@@ -83,7 +83,7 @@ var SeverityIndex = [
 	'info',
 	'debug'
 ];
-var SeverityMap = {
+const SeverityMap = {
 	'emerg': 0,
 	'alert': 1,
 	'crit': 2,
@@ -102,7 +102,7 @@ var SeverityMap = {
 /*
  *  Defines the range matching BSD style months to integers.
  */
-var BSDDateMap = {
+const BSDDateMap = {
 	'Jan': 0,
 	'Feb': 1,
 	'Mar': 2,
@@ -117,7 +117,7 @@ var BSDDateMap = {
 	'Dec': 11
 };
 
-var LoggyParser = function() {};
+const LoggyParser = function() {};
 
 /*
  *  Parse the raw message received.
@@ -143,15 +143,15 @@ LoggyParser.prototype.parse = function(rawMessage, callback) {
 	}
 
 	// Always return the original message
-	var parsedMessage = {
+	let parsedMessage = {
 		originalMessage: rawMessage
 	};
 
 	// The bit of the message that isn't the other bits of the message
-	var rightMessage = rawMessage;
+	let rightMessage = rawMessage;
 
 	// Priority/Facility
-	var segment = rightMessage.match(/^<(\d+)>\s*/);
+	let segment = rightMessage.match(/^<(\d+)>\s*/);
 	if(segment) {
 		parsedMessage.facilityID = segment[1] >>> 3;
 		parsedMessage.severityID = segment[1] & 0b111;
@@ -227,14 +227,19 @@ LoggyParser.prototype.parse = function(rawMessage, callback) {
  *  @see http://blog.toppingdesign.com/2009/08/13/fast-rfc-3339-date-processing-in-javascript/
  */
 LoggyParser.prototype.parseRfc3339 = function(timeStamp){
-	var utcOffset, offsetSplitChar, offsetString,
-	offsetMultiplier = 1,
-	dateTime = timeStamp.split("T");
+	let
+		utcOffset,
+		offsetSplitChar,
+		offsetString,
+		offsetMultiplier = 1,
+		dateTime = timeStamp.split("T");
+
 	if(dateTime.length < 2) return false;
 
-	var date    = dateTime[0].split("-"),
-	time        = dateTime[1].split(":"),
-	offsetField = time[time.length - 1];
+	let
+		date = dateTime[0].split("-"),
+		time = dateTime[1].split(":"),
+		offsetField = time[time.length - 1];
 
 	offsetFieldIdentifier = offsetField.charAt(offsetField.length - 1);
 	if (offsetFieldIdentifier === "Z") {
@@ -251,14 +256,13 @@ LoggyParser.prototype.parseRfc3339 = function(timeStamp){
 
 		offsetString = offsetField.split(offsetSplitChar);
 		if(offsetString.length < 2) return false;
+
 		time[(time.length - 1)] = offsetString[0];
 		offsetString = offsetString[1].split(":");
-		utcOffset    = (offsetString[0] * 60) + offsetString[1];
-		utcOffset    = utcOffset * 60 * 1000;
+		utcOffset = (offsetString[0] * 60) + offsetString[1];
+		utcOffset = utcOffset * 60 * 1000;
 	}
-
-	var parsedTime = new Date(Date.UTC(date[0], date[1] - 1, date[2], time[0], time[1], time[2]) + (utcOffset * offsetMultiplier ));
-	return parsedTime;
+	return new Date(Date.UTC(date[0], date[1] - 1, date[2], time[0], time[1], time[2]) + (utcOffset * offsetMultiplier));
 };
 
 /*
@@ -267,16 +271,16 @@ LoggyParser.prototype.parseRfc3339 = function(timeStamp){
  *  @return {Object/false} Timestamp, if successfully parsed
  */
 LoggyParser.prototype.parse8601 = function(timeStamp) {
-	var parsedTime = new Date(Date.parse(timeStamp));
+	let parsedTime = new Date(Date.parse(timeStamp));
 	if(parsedTime instanceof Date && !isNaN(parsedTime)) return parsedTime;
 	return false;
 };
 
 
-var syslogParser = new LoggyParser();
+const syslogParser = new LoggyParser();
 onmessage = function(e) {
 	syslogParser.parse(e.data.msg, (msg) => {
 		msg.idx = e.data.idx;
 		postMessage(msg);
 	});
-}
+};

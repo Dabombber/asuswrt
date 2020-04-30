@@ -66,7 +66,6 @@
 			showclock();
 			showbootTime();
 			showDST();
-			initSeverity();
 			setTimeout("get_log_data();", 0);
 		}
 		function applySettings(){
@@ -83,8 +82,12 @@
 				success: function(response){
 					if((document.getElementById("auto_refresh").checked)){
 						let el = document.getElementById("syslogContainer");
-						if(el.scrollHeight - el.scrollTop - el.clientHeight <= 1) autoscroll = true;
-						if(processLogFile(response.slice(30,-30)) > 0 && autoscroll) $(el).animate({ scrollTop: el.scrollHeight - el.clientHeight }, "slow");
+						if(el.scrollHeight - el.scrollTop - el.clientHeight <= 1) {
+							autoscroll = true;
+						}
+						if(processLogFile(response.slice(30,-30)) > 0 && autoscroll) {
+							$(el).animate({ scrollTop: el.scrollHeight - el.clientHeight }, "slow");
+						}
 						autoscroll = false;
 					}
 					setTimeout("get_log_data();", 5000);
@@ -186,11 +189,12 @@
 											</table>
 											<div class="apply_gen" valign="top"><input class="button_gen" onclick="applySettings();" type="button" value="<#164#>" /></div>
 										</form>
-										<div style="color:#FFCC00;padding-top:10px;"><input type="checkbox" checked id="auto_refresh"><label for="auto_refresh">Auto refresh</label>
-											<input type="checkbox" id="facility" onchange="document.getElementById('syslogTable').classList.toggle(this.id, this.checked);"><label for="facility">Facility</label>
-											<input type="checkbox" id="hostname" onchange="document.getElementById('syslogTable').classList.toggle(this.id, this.checked);"><label for="hostname">Hostname</label>
+										<div id="syslogControls">
+											<div><input type="checkbox" checked id="auto_refresh"><label for="auto_refresh">Auto refresh</label></div>
+											<div><input type="checkbox" id="facility" onchange="toggleColumn(this.id, this.checked);"><label for="facility">Facility</label></div>
+											<div><input type="checkbox" id="hostname" onchange="toggleColumn(this.id, this.checked);"><label for="hostname">Hostname</label></div>
 											<div id="severityContainer">
-												<select id="severity" class="input_option" onchange="filterSeverity(this)">
+												<select id="severity" class="input_option" onchange="applyFilter(this.value)">
 													<option value="emerg" <% nvram_match("log_level", "1", "selected"); %>>emergency</option>
 													<option value="alert" <% nvram_match("log_level", "2", "selected"); %>>alert</option>
 													<option value="crit" <% nvram_match("log_level", "3", "selected"); %>>critical</option>
@@ -199,30 +203,27 @@
 													<option value="notice" <% nvram_match("log_level", "6", "selected"); %>>notice</option>
 													<option value="info" <% nvram_match("log_level", "7", "selected"); %>>info</option>
 													<option value="debug" <% nvram_match("log_level", "8", "selected"); %>>debug</option>
-												</select>
-												<label for="severity">or more urgent</label>
+												</select><label for="severity">or more urgent</label>
 											</div>
 										</div>
-										<div style="margin-top:8px">
-											<div id="syslogContainer">
-												<table id="syslogTable">
-													<colgroup>
-														<col>
-													</colgroup>
-													<thead>
-														<tr>
-															<th colspan="5">Raw</th>
-															<th>Facility</th>
-															<th>Time</th>
-															<th>Hostname</th>
-															<th>Source</th>
-															<th>Message</th>
-														</tr>
-													</thead>
-													<tbody>
-													</tbody>
-												</table>
-											</div>
+										<div id="syslogContainer">
+											<table id="syslogTable">
+												<colgroup>
+													<col>
+												</colgroup>
+												<thead>
+													<tr>
+														<th colspan="5">Raw</th>
+														<th>Facility</th>
+														<th>Time</th>
+														<th>Hostname</th>
+														<th>Source</th>
+														<th>Message</th>
+													</tr>
+												</thead>
+												<tbody>
+												</tbody>
+											</table>
 										</div>
 										<div>
 											<table class="apply_gen">
