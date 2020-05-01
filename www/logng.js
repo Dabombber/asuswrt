@@ -50,6 +50,7 @@ syslogWorker.onmessage = function(e) {
 function processLogFile(file) {
 	let tbody = document.getElementById("syslogTable").getElementsByTagName("tbody")[0];
 	let added = 0;
+	let stack = [];
 	file.substring(file.lastIndexEnd(lastLine)).split("\n").forEach(line => {
 		if (line) {
 			lastLine = "\n" + line + "\n";
@@ -57,10 +58,11 @@ function processLogFile(file) {
 			let cell = row.insertCell(-1);
 			cell.innerText = line;
 			cell.colSpan = 5;
-			syslogWorker.postMessage({idx: row.rowIndex, msg: line});
+			stack.push({idx: row.rowIndex, msg: line});
 			added++;
 		}
 	});
+	while(stack.length) syslogWorker.postMessage(stack.pop());
 	return added;
 }
 
