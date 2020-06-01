@@ -63,6 +63,18 @@ Some escape sequence constants.
 
 A wrapper for installing [acme.sh](https://github.com/acmesh-official/acme.sh). Adds cron job to check for renewals at a random time between 12pm-1am, and an `acme` command.
 
+Defaults to saving certificates to `/jffs/.cert/`, which matches the **WAN > DDNS > Webui SSL Certificate > HTTPS/SSL Certificate** setting **Import/Persistent Auto-generated**.
+
+```sh
+# Example install
+./acme.sh install
+# add the acme command to the current ssh session, or just reconnect
+acme() { /jffs/scripts/.acme.event.sh alias "$@"; }
+# get a cert
+export GANDI_LIVEDNS_KEY="XXXXXXXXXXXXXXXXXXXXXXXX"
+acme --issue --dns "dns_gandi_livedns" -d "example.com" -d "*.example.com"
+```
+
 ### adblock.sh
 
 A dnsmasq based adblocker. Uses a set of hosts/domains lists which are updated (defaults to some time between 3-4am daily) and consolidated into a hosts file for dnsmasq.
