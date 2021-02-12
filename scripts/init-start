@@ -40,18 +40,3 @@ fi
 if ! mount | grep -Fq '/www/notification.js'; then
 	mount -o bind "$NOTIFILE" '/www/notification.js'
 fi
-
-# Monitor skipped events
-tail -n0 -F '/tmp/syslog.log' | while read -r LINE; do
-	if [ -z "${LINE##*"rc_service: skip the event:"*}" ] && [ -x '/jffs/scripts/service-event-skip' ]; then
-		EVENT="${LINE#*"event: "}"
-		EVENT="${EVENT%.}"
-		if [ -z "${EVENT##*_*}" ]; then
-			logger "custom_script: Running /jffs/scripts/service-event-skip (args: ${EVENT%%_*} ${EVENT#*_})"
-			/jffs/scripts/service-event-skip "${EVENT%%_*}" "${EVENT#*_}" &
-		else
-			logger "custom_script: Running /jffs/scripts/service-event-skip (arg: $EVENT)"
-			/jffs/scripts/service-event-skip "" "$EVENT" &
-		fi
-	fi
-done &

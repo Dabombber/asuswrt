@@ -1,16 +1,16 @@
 Date.prototype.to8601String = function() {
 	return this.getFullYear() +
-	'-' + (this.getMonth() + 1).toString().padStart(2, '0') +
-	'-' + this.getDate().toString().padStart(2, '0') +
-	' ' + this.getHours().toString().padStart(2, '0') +
-	':' + this.getMinutes().toString().padStart(2, '0') +
-	':' + this.getSeconds().toString().padStart(2, '0');
+	"-" + (this.getMonth() + 1).toString().padStart(2, "0") +
+	"-" + this.getDate().toString().padStart(2, "0") +
+	" " + this.getHours().toString().padStart(2, "0") +
+	":" + this.getMinutes().toString().padStart(2, "0") +
+	":" + this.getSeconds().toString().padStart(2, "0");
 };
 
 String.prototype.lastIndexEnd = function(string) {
 	if (!string) return -1;
-	let io = this.lastIndexOf(string)
-	return io == -1 ? -1 : io + string.length;
+	const io = this.lastIndexOf(string)
+	return io === -1 ? -1 : io + string.length;
 };
 
 let lastLine = "";
@@ -18,7 +18,7 @@ const syslogWorker = new Worker("/user/logng_worker.js");
 
 syslogWorker.onmessage = function(e) {
 	if (!e.data.idx) return;
-	let row = document.getElementById("syslogTable").rows[e.data.idx];
+	const row = document.getElementById("syslogTable").rows[e.data.idx];
 
 	let cell = row.insertCell(-1);
 	if (e.data.facility) {
@@ -48,16 +48,17 @@ syslogWorker.onmessage = function(e) {
 }
 
 function processLogFile(file) {
-	let tbody = document.getElementById("syslogTable").getElementsByTagName("tbody")[0];
+	const tbody = document.getElementById("syslogTable").getElementsByTagName("tbody")[0];
+	const stack = [];
 	let added = 0;
-	let stack = [];
 	file.substring(file.lastIndexEnd(lastLine)).split("\n").forEach(line => {
 		if (line) {
 			lastLine = "\n" + line + "\n";
-			let row = tbody.insertRow(-1);
-			let cell = row.insertCell(-1);
+			const row = tbody.insertRow(-1);
+			const cell = row.insertCell(-1);
 			cell.innerText = line;
 			cell.colSpan = 5;
+			//syslogWorker.postMessage({idx: row.rowIndex, msg: line});
 			stack.push({idx: row.rowIndex, msg: line});
 			added++;
 		}
@@ -67,13 +68,12 @@ function processLogFile(file) {
 }
 
 // Debug means no filter, so no need to include
-const filterList = ['emerg','alert','crit','err','warning','notice','info'];
-
+const filterList = ["emerg", "alert", "crit", "err", "warning", "notice", "info"];
 
 document.addEventListener("DOMContentLoaded", function() {
 	// Initialise filters
 	if (typeof(Storage) !== "undefined" && localStorage.selectSeverity) {
-		if(filterList.indexOf(localStorage.selectSeverity) != -1) {
+		if(filterList.indexOf(localStorage.selectSeverity) !== -1) {
 			document.getElementById("syslogTable").classList.add("filter_" + localStorage.selectSeverity)
 		}
 		document.getElementById("severity").value = localStorage.selectSeverity;
@@ -86,26 +86,41 @@ document.addEventListener("DOMContentLoaded", function() {
 
 	// Initialise columns
 	if (typeof(Storage) !== "undefined") {
-		let inputs = document.querySelectorAll("input[type=checkbox]");
+		const inputs = document.querySelectorAll("input[type=checkbox]");
 		for(let i = 0; i < inputs.length; i++) {
 			if(localStorage["check" + inputs[i].id]) {
-				let value = (localStorage["check" + inputs[i].id] == "true");
-				document.getElementById('syslogTable').classList.toggle(inputs[i].id, value);
+				const value = (localStorage["check" + inputs[i].id] === "true");
+				document.getElementById("syslogTable").classList.toggle(inputs[i].id, value);
 				document.getElementById(inputs[i].id).checked = value;
 			}
 		}
 	}
+
+	// Allow changing severity by scrolling over it
+	document.getElementById("severity").addEventListener("wheel", function(e) {
+		if(this.hasFocus || !e.deltaY) return;
+		e.preventDefault();
+		if(e.deltaY < 0) {
+			if(this.selectedIndex <= 0) return;
+			this.selectedIndex = this.selectedIndex - 1;
+		}
+		if(e.deltaY > 0) {
+			if(this.selectedIndex >= this.length - 1) return;
+			this.selectedIndex = this.selectedIndex + 1;
+		}
+		applyFilter(this.value);
+	});
 });
 
 function applyFilter(newSeverity) {
-	let container = document.getElementById("syslogContainer");
-	let rescroll = (container.scrollHeight - container.scrollTop - container.clientHeight <= 1) ? true : lowestVisableRow();
-	let table = document.getElementById("syslogTable");
+	const container = document.getElementById("syslogContainer");
+	const rescroll = (container.scrollHeight - container.scrollTop - container.clientHeight <= 1) ? true : lowestVisableRow();
+	const table = document.getElementById("syslogTable");
 	if (typeof(Storage) !== "undefined") {
 		localStorage.selectSeverity = newSeverity;
 	}
 	for (const severity of filterList) {
-		table.classList.toggle("filter_" + severity, newSeverity == severity);
+		table.classList.toggle("filter_" + severity, newSeverity === severity);
 	}
 	if(rescroll === true) {
 		container.scrollTop = container.scrollHeight
@@ -115,18 +130,18 @@ function applyFilter(newSeverity) {
 }
 
 function toggleColumn(column, toggle) {
-	document.getElementById('syslogTable').classList.toggle(column, toggle);
+	document.getElementById("syslogTable").classList.toggle(column, toggle);
 	if (typeof(Storage) !== "undefined") {
 		localStorage["check" + column] = toggle ? "true" : "false";
 	}
 }
 
 function lowestVisableRow() {
-	let table = document.getElementById("syslogTable");
-	let container = document.getElementById("syslogContainer");
+	const table = document.getElementById("syslogTable");
+	const container = document.getElementById("syslogContainer");
 	let bottomRow;
 
-	for (let i = 0, row; row = table.rows[i]; i++) {
+	for (let i = 0, row; (row = table.rows[i]); i++) {
 		// Skip hidden rows
 		if(!row.offsetParent) continue;
 		if(container.scrollTop + container.clientHeight >= row.offsetTop + row.clientHeight) {

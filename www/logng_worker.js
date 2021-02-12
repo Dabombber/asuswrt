@@ -12,109 +12,109 @@
  *    ntp, security, console and solaris-cron used internally
  */
 const FacilityIndex = [
-	'kern',
-	'user',
-	'mail',
-	'daemon',
-	'auth',
-	'syslog',
-	'lpr',
-	'news',
-	'uucp',
-	'cron',
-	'authpriv',
-	'ftp',
-	'ntp',
-	'security',
-	'console',
-	'solaris-cron',
-	'local0',
-	'local1',
-	'local2',
-	'local3',
-	'local4',
-	'local5',
-	'local6',
-	'local7'
+	"kern",
+	"user",
+	"mail",
+	"daemon",
+	"auth",
+	"syslog",
+	"lpr",
+	"news",
+	"uucp",
+	"cron",
+	"authpriv",
+	"ftp",
+	"ntp",
+	"security",
+	"console",
+	"solaris-cron",
+	"local0",
+	"local1",
+	"local2",
+	"local3",
+	"local4",
+	"local5",
+	"local6",
+	"local7"
 ];
 const FacilityMap = {
 	// syslog-ng
-	'kern': 0,
-	'user': 1,
-	'mail': 2,
-	'daemon': 3,
-	'auth': 4,
-	'syslog': 5,
-	'lpr': 6,
-	'news': 7,
-	'uucp': 8,
-	'cron': 9,
-	'authpriv': 10,
-	'ftp': 11,
-	'ntp': 12,
-	'security': 13,
-	'console': 14,
-	'solaris-cron': 15,
-	'local0': 16,
-	'local1': 17,
-	'local2': 18,
-	'local3': 19,
-	'local4': 20,
-	'local5': 21,
-	'local6': 22,
-	'local7': 23,
+	"kern": 0,
+	"user": 1,
+	"mail": 2,
+	"daemon": 3,
+	"auth": 4,
+	"syslog": 5,
+	"lpr": 6,
+	"news": 7,
+	"uucp": 8,
+	"cron": 9,
+	"authpriv": 10,
+	"ftp": 11,
+	"ntp": 12,
+	"security": 13,
+	"console": 14,
+	"solaris-cron": 15,
+	"local0": 16,
+	"local1": 17,
+	"local2": 18,
+	"local3": 19,
+	"local4": 20,
+	"local5": 21,
+	"local6": 22,
+	"local7": 23,
 
 	// rsyslog
-	'logaudit': 13,
-	'logalert': 14,
-	'clock': 15
+	"logaudit": 13,
+	"logalert": 14,
+	"clock": 15
 };
 
 /*
  *  These values replace the integers in message that define the severity.
  */
 const SeverityIndex = [
-	'emerg',
-	'alert',
-	'crit',
-	'err',
-	'warning',
-	'notice',
-	'info',
-	'debug'
+	"emerg",
+	"alert",
+	"crit",
+	"err",
+	"warning",
+	"notice",
+	"info",
+	"debug"
 ];
 const SeverityMap = {
-	'emerg': 0,
-	'alert': 1,
-	'crit': 2,
-	'err': 3,
-	'warning': 4,
-	'notice': 5,
-	'info': 6,
-	'debug': 7,
+	"emerg": 0,
+	"alert": 1,
+	"crit": 2,
+	"err": 3,
+	"warning": 4,
+	"notice": 5,
+	"info": 6,
+	"debug": 7,
 
 	// deprecated
-	'panic': 0,
-	'error': 3,
-	'warn': 4
+	"panic": 0,
+	"error": 3,
+	"warn": 4
 };
 
 /*
  *  Defines the range matching BSD style months to integers.
  */
 const BSDDateMap = {
-	'Jan': 0,
-	'Feb': 1,
-	'Mar': 2,
-	'Apr': 3,
-	'May': 4,
-	'Jun': 5,
-	'Jul': 6,
-	'Aug': 7,
-	'Sep': 8,
-	'Oct': 9,
-	'Nov': 10,
-	'Dec': 11
+	"Jan": 0,
+	"Feb": 1,
+	"Mar": 2,
+	"Apr": 3,
+	"May": 4,
+	"Jun": 5,
+	"Jul": 6,
+	"Aug": 7,
+	"Sep": 8,
+	"Oct": 9,
+	"Nov": 10,
+	"Dec": 11
 };
 
 const LoggyParser = function() {};
@@ -138,7 +138,7 @@ const LoggyParser = function() {};
  *    message
  */
 LoggyParser.prototype.parse = function(rawMessage, callback) {
-	if(typeof rawMessage != 'string') {
+	if(typeof rawMessage != "string") {
 		return rawMessage;
 	}
 

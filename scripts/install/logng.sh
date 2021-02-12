@@ -302,6 +302,7 @@ case "$EVENT" in
 	'init-start')
 		printf '%s %s\n' "$(awk -F. '{print $1}' < /proc/uptime)" "$(date '+%s')" > /tmp/.time-init
 		web_mount
+		[ -x '/jffs/scripts/.logmonitor.sh' ] && /jffs/scripts/.logmonitor.sh start
 	;;
 	'service-event')
 		if [ "$1_$2" = 'restart_diskmon' ]; then
@@ -314,8 +315,13 @@ case "$EVENT" in
 				fi
 			fi
 		elif [ "$1" != 'stop' ] && { [ "$2" = 'logger' ] || [ "$2" = 'time' ]; } && pidof syslog-ng &>/dev/null; then
-			waitkill 'klogd' &
-			waitkill 'syslogd' &
+			(
+				waitkill 'klogd' &
+				waitkill 'syslogd' &
+
+				wait
+				[ -x /opt/etc/init.d/S01syslog-ng ] && /opt/etc/init.d/S01syslog-ng restart
+			) &
 		fi
 	;;
 	'rc.func')
@@ -326,18 +332,24 @@ case "$EVENT" in
 
 		case "$1" in
 			'start')
+				[ -x '/jffs/scripts/.logmonitor.sh' ] && /jffs/scripts/.logmonitor.sh stop && LOGMONITOR='true'
 				pre_syslog && start
+				[ LOGMONITOR = 'true' ] && /jffs/scripts/.logmonitor.sh start
 			;;
 			'stop'|'kill')
+				[ -x '/jffs/scripts/.logmonitor.sh' ] && /jffs/scripts/.logmonitor.sh stop && LOGMONITOR='true'
 				check && stop && post_syslog
+				[ LOGMONITOR = 'true' ] && /jffs/scripts/.logmonitor.sh start
 			;;
 			'restart')
+				[ -x '/jffs/scripts/.logmonitor.sh' ] && /jffs/scripts/.logmonitor.sh stop && LOGMONITOR='true'
 				if check >/dev/null; then
 					stop
 					start
 				else
 					pre_syslog && start
 				fi
+				[ LOGMONITOR = 'true' ] && /jffs/scripts/.logmonitor.sh start
 			;;
 			'check')
 				check
@@ -352,8 +364,65 @@ case "$EVENT" in
 	;;
 esac
 EOF
+		cat > /jffs/scripts/.logmonitor.sh <<'EOF'
+#!/bin/sh
+
+PID_FILE='/tmp/.logmonitor.pid'
+
+start_monitor() {
+	if [ -f "$PID_FILE" ]; then
+		read -r PROCESS < "$PID_FILE"
+		if [ -f "/proc/$PROCESS/status" ]; then
+			return
+		fi
+	fi
+	tail -n0 -F '/tmp/syslog.log' | while read -r LINE; do
+		# Monitor skipped events
+		if [ -z "${LINE##*"rc_service: skip the event:"*}" ] && [ -x '/jffs/scripts/service-event-skip' ]; then
+			EVENT="${LINE#*"event: "}"
+			EVENT="${EVENT%.}"
+			if [ -z "${EVENT##*_*}" ]; then
+				logger -t 'custom_script' "Running /jffs/scripts/service-event-skip (args: ${EVENT%%_*} ${EVENT#*_})"
+				/jffs/scripts/service-event-skip "${EVENT%%_*}" "${EVENT#*_}" &
+			else
+				logger -t 'custom_script' "Running /jffs/scripts/service-event-skip (arg: $EVENT)"
+				/jffs/scripts/service-event-skip "" "$EVENT" &
+			fi
+		fi
+	done &
+	# Find the tail we just started (other option is $! with named pipes)
+	for TAILPID in $(pidof tail); do
+		read -r PROCESS _ _ PARENT _ < "/proc/$TAILPID/stat"
+		if [ "$PARENT" = $$ ]; then
+			printf '%s\n' "$PROCESS"> "$PID_FILE"
+		fi
+	done
+}
+
+stop_monitor() {
+	if [ -f "$PID_FILE" ]; then
+		read -r PROCESS < "$PID_FILE"
+		rm "$PID_FILE"
+		if [ -f "/proc/$PROCESS/status" ]; then
+			kill "$PROCESS" 2>/dev/null
+			true; return $?
+		fi
+	fi
+	false; return $?
+}
+
+case "$1" in
+	'start')
+		start_monitor
+	;;
+	'stop')
+		stop_monitor
+	;;
+esac
+EOF
 
 		chmod +x /jffs/scripts/.logng.event.sh
+		chmod +x /jffs/scripts/.logmonitor.sh
 
 		# Add event triggers
 		local SCRIPT
@@ -384,36 +453,13 @@ case "$1" in
 			# Customise webUI log page
 			mkdir -p /jffs/www/
 			cat > /jffs/www/logng.js <<'EOF'
-Date.prototype.to8601String=function(){return this.getFullYear()+'-'+(this.getMonth()+1).toString().padStart(2,'0')+'-'+this.getDate().toString().padStart(2,'0')+' '+this.getHours().toString().padStart(2,'0')+':'+this.getMinutes().toString().padStart(2,'0')+':'+this.getSeconds().toString().padStart(2,'0')};String.prototype.lastIndexEnd=function(string){if(!string)return-1;let io=this.lastIndexOf(string)
-return io==-1?-1:io+string.length};let lastLine="";const syslogWorker=new Worker("/user/logng_worker.js");syslogWorker.onmessage=function(e){if(!e.data.idx)return;let row=document.getElementById("syslogTable").rows[e.data.idx];let cell=row.insertCell(-1);if(e.data.facility){cell.innerText=e.data.facility;if(e.data.severity)cell.setAttribute("title",e.data.severity)}
-cell=row.insertCell(-1);if(e.data.time){cell.innerText=e.data.time.to8601String();cell.setAttribute("title",e.data.time.toString())}
-cell=row.insertCell(-1);if(e.data.host)cell.innerText=e.data.host;cell=row.insertCell(-1);if(e.data.program){cell.innerText=e.data.program;if(e.data.pid)cell.setAttribute("title",`${e.data.program}[${e.data.pid}]`)}
-cell=row.insertCell(-1);if(e.data.message)cell.innerText=e.data.message;if(e.data.time&&e.data.program&&e.data.message)row.classList.add("lvl_"+(e.data.severity||"unknown"))}
-function processLogFile(file){let tbody=document.getElementById("syslogTable").getElementsByTagName("tbody")[0];let added=0;let stack=[];file.substring(file.lastIndexEnd(lastLine)).split("\n").forEach(line=>{if(line){lastLine="\n"+line+"\n";let row=tbody.insertRow(-1);let cell=row.insertCell(-1);cell.innerText=line;cell.colSpan=5;stack.push({idx:row.rowIndex,msg:line});added++}});while(stack.length)syslogWorker.postMessage(stack.pop());return added}
-const filterList=['emerg','alert','crit','err','warning','notice','info'];document.addEventListener("DOMContentLoaded",function(){if(typeof(Storage)!=="undefined"&&localStorage.selectSeverity){if(filterList.indexOf(localStorage.selectSeverity)!=-1){document.getElementById("syslogTable").classList.add("filter_"+localStorage.selectSeverity)}
-document.getElementById("severity").value=localStorage.selectSeverity}else{if(0<<%nvram_get("log_level");%>&&<%nvram_get("log_level");%><8){document.getElementById("syslogTable").classList.add("filter_"+filterList[<%nvram_get("log_level");%>-1])}}
-if(typeof(Storage)!=="undefined"){let inputs=document.querySelectorAll("input[type=checkbox]");for(let i=0;i<inputs.length;i++){if(localStorage["check"+inputs[i].id]){let value=(localStorage["check"+inputs[i].id]=="true");document.getElementById('syslogTable').classList.toggle(inputs[i].id,value);document.getElementById(inputs[i].id).checked=value}}}});function applyFilter(newSeverity){let container=document.getElementById("syslogContainer");let rescroll=(container.scrollHeight-container.scrollTop-container.clientHeight<=1)?!0:lowestVisableRow();let table=document.getElementById("syslogTable");if(typeof(Storage)!=="undefined"){localStorage.selectSeverity=newSeverity}
-for(const severity of filterList){table.classList.toggle("filter_"+severity,newSeverity==severity)}
-if(rescroll===!0){container.scrollTop=container.scrollHeight}else if(rescroll&&container.scrollTop+container.clientHeight<rescroll.offsetTop+rescroll.clientHeight){container.scrollTop=rescroll.offsetTop+rescroll.clientHeight-container.clientHeight}}
-function toggleColumn(column,toggle){document.getElementById('syslogTable').classList.toggle(column,toggle);if(typeof(Storage)!=="undefined"){localStorage["check"+column]=toggle?"true":"false"}}
-function lowestVisableRow(){let table=document.getElementById("syslogTable");let container=document.getElementById("syslogContainer");let bottomRow;for(let i=0,row;row=table.rows[i];i++){if(!row.offsetParent)continue;if(container.scrollTop+container.clientHeight>=row.offsetTop+row.clientHeight){bottomRow=row}else{break}}
-return bottomRow}
+Date.prototype.to8601String=function(){return this.getFullYear()+"-"+(this.getMonth()+1).toString().padStart(2,"0")+"-"+this.getDate().toString().padStart(2,"0")+" "+this.getHours().toString().padStart(2,"0")+":"+this.getMinutes().toString().padStart(2,"0")+":"+this.getSeconds().toString().padStart(2,"0")},String.prototype.lastIndexEnd=function(e){if(!e)return-1;const t=this.lastIndexOf(e);return-1===t?-1:t+e.length};let lastLine="";const syslogWorker=new Worker("/user/logng_worker.js");function processLogFile(e){const t=document.getElementById("syslogTable").getElementsByTagName("tbody")[0],l=[];let n=0;for(e.substring(e.lastIndexEnd(lastLine)).split("\n").forEach(e=>{if(e){lastLine="\n"+e+"\n";const o=t.insertRow(-1),s=o.insertCell(-1);s.innerText=e,s.colSpan=5,l.push({idx:o.rowIndex,msg:e}),n++}});l.length;)syslogWorker.postMessage(l.pop());return n}syslogWorker.onmessage=function(e){if(!e.data.idx)return;const t=document.getElementById("syslogTable").rows[e.data.idx];let l=t.insertCell(-1);e.data.facility&&(l.innerText=e.data.facility,e.data.severity&&l.setAttribute("title",e.data.severity)),l=t.insertCell(-1),e.data.time&&(l.innerText=e.data.time.to8601String(),l.setAttribute("title",e.data.time.toString())),l=t.insertCell(-1),e.data.host&&(l.innerText=e.data.host),l=t.insertCell(-1),e.data.program&&(l.innerText=e.data.program,e.data.pid&&l.setAttribute("title",`${e.data.program}[${e.data.pid}]`)),l=t.insertCell(-1),e.data.message&&(l.innerText=e.data.message),e.data.time&&e.data.program&&e.data.message&&t.classList.add("lvl_"+(e.data.severity||"unknown"))};const filterList=["emerg","alert","crit","err","warning","notice","info"];function applyFilter(e){const t=document.getElementById("syslogContainer"),l=t.scrollHeight-t.scrollTop-t.clientHeight<=1||lowestVisableRow(),n=document.getElementById("syslogTable");"undefined"!=typeof Storage&&(localStorage.selectSeverity=e);for(const t of filterList)n.classList.toggle("filter_"+t,e===t);!0===l?t.scrollTop=t.scrollHeight:l&&t.scrollTop+t.clientHeight<l.offsetTop+l.clientHeight&&(t.scrollTop=l.offsetTop+l.clientHeight-t.clientHeight)}function toggleColumn(e,t){document.getElementById("syslogTable").classList.toggle(e,t),"undefined"!=typeof Storage&&(localStorage["check"+e]=t?"true":"false")}function lowestVisableRow(){const e=document.getElementById("syslogTable"),t=document.getElementById("syslogContainer");let l;for(let n,o=0;n=e.rows[o];o++)if(n.offsetParent){if(!(t.scrollTop+t.clientHeight>=n.offsetTop+n.clientHeight))break;l=n}return l}document.addEventListener("DOMContentLoaded",function(){if("undefined"!=typeof Storage&&localStorage.selectSeverity?(-1!==filterList.indexOf(localStorage.selectSeverity)&&document.getElementById("syslogTable").classList.add("filter_"+localStorage.selectSeverity),document.getElementById("severity").value=localStorage.selectSeverity):0< <% nvram_get("log_level"); %> && <% nvram_get("log_level"); %> <8&&document.getElementById("syslogTable").classList.add("filter_"+filterList[ <% nvram_get("log_level"); %> -1]),"undefined"!=typeof Storage){const e=document.querySelectorAll("input[type=checkbox]");for(let t=0;t<e.length;t++)if(localStorage["check"+e[t].id]){const l="true"===localStorage["check"+e[t].id];document.getElementById("syslogTable").classList.toggle(e[t].id,l),document.getElementById(e[t].id).checked=l}}document.getElementById("severity").addEventListener("wheel",function(e){if(!this.hasFocus&&e.deltaY){if(e.preventDefault(),e.deltaY<0){if(this.selectedIndex<=0)return;this.selectedIndex=this.selectedIndex-1}if(e.deltaY>0){if(this.selectedIndex>=this.length-1)return;this.selectedIndex=this.selectedIndex+1}applyFilter(this.value)}})});
 EOF
 			cat > /jffs/www/logng_worker.js <<'EOF'
-const FacilityIndex=['kern','user','mail','daemon','auth','syslog','lpr','news','uucp','cron','authpriv','ftp','ntp','security','console','solaris-cron','local0','local1','local2','local3','local4','local5','local6','local7'];const FacilityMap={'kern':0,'user':1,'mail':2,'daemon':3,'auth':4,'syslog':5,'lpr':6,'news':7,'uucp':8,'cron':9,'authpriv':10,'ftp':11,'ntp':12,'security':13,'console':14,'solaris-cron':15,'local0':16,'local1':17,'local2':18,'local3':19,'local4':20,'local5':21,'local6':22,'local7':23,'logaudit':13,'logalert':14,'clock':15};const SeverityIndex=['emerg','alert','crit','err','warning','notice','info','debug'];const SeverityMap={'emerg':0,'alert':1,'crit':2,'err':3,'warning':4,'notice':5,'info':6,'debug':7,'panic':0,'error':3,'warn':4};const BSDDateMap={'Jan':0,'Feb':1,'Mar':2,'Apr':3,'May':4,'Jun':5,'Jul':6,'Aug':7,'Sep':8,'Oct':9,'Nov':10,'Dec':11};const LoggyParser=function(){};LoggyParser.prototype.parse=function(rawMessage,callback){if(typeof rawMessage!='string'){return rawMessage}
-let parsedMessage={originalMessage:rawMessage};let rightMessage=rawMessage;let segment=rightMessage.match(/^<(\d+)>\s*/);if(segment){parsedMessage.facilityID=segment[1]>>>3;parsedMessage.severityID=segment[1]&0b111;if(parsedMessage.facilityID<24&&parsedMessage.severityID<8){parsedMessage.facility=FacilityIndex[parsedMessage.facilityID];parsedMessage.severity=SeverityIndex[parsedMessage.severityID]}
-rightMessage=rightMessage.substring(segment[0].length)}
-segment=rightMessage.match(/^(\d{4}\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+/);if(segment){parsedMessage.time=new Date(segment[1]||(new Date()).getUTCFullYear(),BSDDateMap[segment[2]],segment[3],segment[4],segment[5],segment[6]);rightMessage=rightMessage.substring(segment[0].length)}else{segment=rightMessage.match(/^([^\s]+)\s+/);if(segment){parsedMessage.time=this.parse8601(segment[1])||this.parseRfc3339(segment[1]);if(parsedMessage.time){rightMessage=rightMessage.substring(segment[0].length)}}}
-segment=rightMessage.match(/^(?:([^\s]*(?:[^\s:]|::))\s+(?:(kern|user|mail|daemon|auth|security|syslog|lpr|news|uucp|cron|authpriv|ftp|ntp|security|logaudit|console|logalert|solaris-cron|clock|local[0-7])\.(emerg|panic|alert|crit|err|error|warn|warning|notice|info|debug)\s+)?)?([^\s]+):\s+/);if(segment){parsedMessage.host=segment[1];parsedMessage.program=segment[4];if(segment[2]&&segment[3]){parsedMessage.facilityID=FacilityMap[segment[2]];parsedMessage.severityID=SeverityMap[segment[3]];parsedMessage.facility=FacilityIndex[parsedMessage.facilityID];parsedMessage.severity=SeverityIndex[parsedMessage.severityID]}
-rightMessage=rightMessage.substring(segment[0].length);segment=parsedMessage.program.match(/\[(\d+)\]$/);if(segment){parsedMessage.pid=segment[1];parsedMessage.program=parsedMessage.program.slice(0,-segment[0].length)}}
-if(parsedMessage.pid){parsedMessage.header=parsedMessage.program+"["+parsedMessage.pid+"]: "}else if(parsedMessage.program){parsedMessage.header=parsedMessage.program+": "}else{parsedMessage.header=""}
-parsedMessage.message=rightMessage;if(callback){callback(parsedMessage)}else{return parsedMessage}};LoggyParser.prototype.parseRfc3339=function(timeStamp){let
-utcOffset,offsetSplitChar,offsetString,offsetMultiplier=1,dateTime=timeStamp.split("T");if(dateTime.length<2)return!1;let date=dateTime[0].split("-"),time=dateTime[1].split(":"),offsetField=time[time.length-1];offsetFieldIdentifier=offsetField.charAt(offsetField.length-1);if(offsetFieldIdentifier==="Z"){utcOffset=0;time[time.length-1]=offsetField.substr(0,offsetField.length-2)}else{if(offsetField[offsetField.length-1].indexOf("+")!=-1){offsetSplitChar="+";offsetMultiplier=1}else{offsetSplitChar="-";offsetMultiplier=-1}
-offsetString=offsetField.split(offsetSplitChar);if(offsetString.length<2)return!1;time[(time.length-1)]=offsetString[0];offsetString=offsetString[1].split(":");utcOffset=(offsetString[0]*60)+offsetString[1];utcOffset=utcOffset*60*1000}
-return new Date(Date.UTC(date[0],date[1]-1,date[2],time[0],time[1],time[2])+(utcOffset*offsetMultiplier))};LoggyParser.prototype.parse8601=function(timeStamp){let parsedTime=new Date(Date.parse(timeStamp));if(parsedTime instanceof Date&&!isNaN(parsedTime))return parsedTime;return!1};const syslogParser=new LoggyParser();onmessage=function(e){syslogParser.parse(e.data.msg,(msg)=>{msg.idx=e.data.idx;postMessage(msg)})}
+const FacilityIndex=["kern","user","mail","daemon","auth","syslog","lpr","news","uucp","cron","authpriv","ftp","ntp","security","console","solaris-cron","local0","local1","local2","local3","local4","local5","local6","local7"],FacilityMap={kern:0,user:1,mail:2,daemon:3,auth:4,syslog:5,lpr:6,news:7,uucp:8,cron:9,authpriv:10,ftp:11,ntp:12,security:13,console:14,"solaris-cron":15,local0:16,local1:17,local2:18,local3:19,local4:20,local5:21,local6:22,local7:23,logaudit:13,logalert:14,clock:15},SeverityIndex=["emerg","alert","crit","err","warning","notice","info","debug"],SeverityMap={emerg:0,alert:1,crit:2,err:3,warning:4,notice:5,info:6,debug:7,panic:0,error:3,warn:4},BSDDateMap={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11},LoggyParser=function(){};LoggyParser.prototype.parse=function(e,r){if("string"!=typeof e)return e;let t={originalMessage:e},a=e,i=a.match(/^<(\d+)>\s*/);if(i&&(t.facilityID=i[1]>>>3,t.severityID=7&i[1],t.facilityID<24&&t.severityID<8&&(t.facility=FacilityIndex[t.facilityID],t.severity=SeverityIndex[t.severityID]),a=a.substring(i[0].length)),(i=a.match(/^(\d{4}\s+)?(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})\s+/))?(t.time=new Date(i[1]||(new Date).getUTCFullYear(),BSDDateMap[i[2]],i[3],i[4],i[5],i[6]),a=a.substring(i[0].length)):(i=a.match(/^([^\s]+)\s+/))&&(t.time=this.parse8601(i[1])||this.parseRfc3339(i[1]),t.time&&(a=a.substring(i[0].length))),(i=a.match(/^(?:([^\s]*(?:[^\s:]|::))\s+(?:(kern|user|mail|daemon|auth|security|syslog|lpr|news|uucp|cron|authpriv|ftp|ntp|security|logaudit|console|logalert|solaris-cron|clock|local[0-7])\.(emerg|panic|alert|crit|err|error|warn|warning|notice|info|debug)\s+)?)?([^\s]+):\s+/))&&(t.host=i[1],t.program=i[4],i[2]&&i[3]&&(t.facilityID=FacilityMap[i[2]],t.severityID=SeverityMap[i[3]],t.facility=FacilityIndex[t.facilityID],t.severity=SeverityIndex[t.severityID]),a=a.substring(i[0].length),(i=t.program.match(/\[(\d+)\]$/))&&(t.pid=i[1],t.program=t.program.slice(0,-i[0].length))),t.pid?t.header=t.program+"["+t.pid+"]: ":t.program?t.header=t.program+": ":t.header="",t.message=a,!r)return t;r(t)},LoggyParser.prototype.parseRfc3339=function(e){let r,t,a,i=1,l=e.split("T");if(l.length<2)return!1;let s=l[0].split("-"),n=l[1].split(":"),o=n[n.length-1];if(offsetFieldIdentifier=o.charAt(o.length-1),"Z"===offsetFieldIdentifier)r=0,n[n.length-1]=o.substr(0,o.length-2);else{if(-1!=o[o.length-1].indexOf("+")?(t="+",i=1):(t="-",i=-1),(a=o.split(t)).length<2)return!1;n[n.length-1]=a[0],r=60*(r=60*(a=a[1].split(":"))[0]+a[1])*1e3}return new Date(Date.UTC(s[0],s[1]-1,s[2],n[0],n[1],n[2])+r*i)},LoggyParser.prototype.parse8601=function(e){let r=new Date(Date.parse(e));return r instanceof Date&&!isNaN(r)&&r};const syslogParser=new LoggyParser;onmessage=function(e){syslogParser.parse(e.data.msg,r=>{r.idx=e.data.idx,postMessage(r)})};
 EOF
 			cat > /jffs/www/logng_style.css <<'EOF'
-#syslogContainer{all:initial;display:inline-block;margin-top:8px;width:745px;height:500px;resize:both;overflow:auto;font-family:'Courier New',Courier,mono;font-size:11px;color:white}#syslogTable{table-layout:fixed;border-collapse:collapse}#syslogTable th{margin:0;position:sticky;top:0;background:#2F3A3E;text-align:left;padding-left:5px}#syslogTable tbody{line-height:normal;height:11px}#syslogTable td{padding-left:2px;padding-right:2px;padding-top:1px;padding-bottom:0;margin:0;border-bottom:1px dotted gray;overflow:hidden;white-space:nowrap}#syslogTable col:first-of-type{border-left:2px solid #2F3A3E}#syslogTable td:last-of-type,#syslogTable th:last-of-type,#syslogTable td:first-of-type{border-right:2px solid #2F3A3E}#syslogTable tr:last-of-type{border-bottom:2px solid #2F3A3E}#syslogTable th:first-of-type,#syslogTable tr.lvl_unknown td:first-of-type,#syslogTable tr.lvl_emerg td:first-of-type,#syslogTable tr.lvl_alert td:first-of-type,#syslogTable tr.lvl_crit td:first-of-type,#syslogTable tr.lvl_err td:first-of-type,#syslogTable tr.lvl_warning td:first-of-type,#syslogTable tr.lvl_notice td:first-of-type,#syslogTable tr.lvl_info td:first-of-type,#syslogTable tr.lvl_debug td:first-of-type,#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type){display:none}#syslogTable th,#syslogTable td{width:0}#syslogTable td:first-of-type,#syslogTable th:last-of-type,#syslogTable td:last-of-type{width:auto;overflow:scroll}#syslogTable:not(.facility) th:nth-of-type(2),#syslogTable:not(.facility) td:nth-of-type(2){display:none}#syslogTable:not(.hostname) th:nth-of-type(4),#syslogTable:not(.hostname) td:nth-of-type(4){display:none}#syslogTable tr.lvl_emerg{background-color:#000}#syslogTable tr.lvl_alert{background-color:#DB78C6}#syslogTable tr.lvl_crit{background-color:#CF1819}#syslogTable tr.lvl_err{background-color:#C4731F}#syslogTable tr.lvl_warning{background-color:#B8BD25}#syslogTable tr.lvl_notice{background-color:#2496B3}#syslogTable tr.lvl_info{background-color:#6F7374}#syslogTable tr.lvl_debug{background-color:#449E74}#syslogTable.filter_emerg tr.lvl_alert,#syslogTable.filter_emerg tr.lvl_crit,#syslogTable.filter_emerg tr.lvl_err,#syslogTable.filter_emerg tr.lvl_warning,#syslogTable.filter_emerg tr.lvl_notice,#syslogTable.filter_emerg tr.lvl_info,#syslogTable.filter_emerg tr.lvl_debug{display:none}#syslogTable.filter_alert tr.lvl_crit,#syslogTable.filter_alert tr.lvl_err,#syslogTable.filter_alert tr.lvl_warning,#syslogTable.filter_alert tr.lvl_notice,#syslogTable.filter_alert tr.lvl_info,#syslogTable.filter_alert tr.lvl_debug{display:none}#syslogTable.filter_crit tr.lvl_err,#syslogTable.filter_crit tr.lvl_warning,#syslogTable.filter_crit tr.lvl_notice,#syslogTable.filter_crit tr.lvl_info,#syslogTable.filter_crit tr.lvl_debug{display:none}#syslogTable.filter_err tr.lvl_warning,#syslogTable.filter_err tr.lvl_notice,#syslogTable.filter_err tr.lvl_info,#syslogTable.filter_err tr.lvl_debug{display:none}#syslogTable.filter_warning tr.lvl_notice,#syslogTable.filter_warning tr.lvl_info,#syslogTable.filter_warning tr.lvl_debug{display:none}#syslogTable.filter_notice tr.lvl_info,#syslogTable.filter_notice tr.lvl_debug{display:none}#syslogTable.filter_info tr.lvl_debug{display:none}#syslogControls{color:#FC0;padding-top:10px}#syslogControls div{padding-left:10px;display:inline-block}label[for="severity"]{padding-left:5px}
+#syslogContainer{all:initial;display:inline-block;margin-top:8px;width:745px;height:500px;resize:both;overflow:auto;font-family:'Courier New',Courier,mono;font-size:11px;color:#fff}#syslogTable{table-layout:fixed;border-collapse:collapse}#syslogTable th{margin:0;position:sticky;top:0;background:#2F3A3E;text-align:left;padding-left:5px}#syslogTable tbody{line-height:normal;height:11px}#syslogTable td{padding-left:2px;padding-right:2px;padding-top:1px;padding-bottom:0;margin:0;border-bottom:1px dotted gray;overflow:hidden;white-space:nowrap}#syslogTable col:first-of-type{border-left:2px solid #2F3A3E}#syslogTable td:last-of-type,#syslogTable th:last-of-type,#syslogTable td:first-of-type{border-right:2px solid #2F3A3E}#syslogTable tr:last-of-type{border-bottom:2px solid #2F3A3E}#syslogTable th:first-of-type,#syslogTable tr.lvl_unknown td:first-of-type,#syslogTable tr.lvl_emerg td:first-of-type,#syslogTable tr.lvl_alert td:first-of-type,#syslogTable tr.lvl_crit td:first-of-type,#syslogTable tr.lvl_err td:first-of-type,#syslogTable tr.lvl_warning td:first-of-type,#syslogTable tr.lvl_notice td:first-of-type,#syslogTable tr.lvl_info td:first-of-type,#syslogTable tr.lvl_debug td:first-of-type,#syslogTable tr:not(.lvl_unknown):not(.lvl_emerg):not(.lvl_alert):not(.lvl_crit):not(.lvl_err):not(.lvl_warning):not(.lvl_notice):not(.lvl_info):not(.lvl_debug) td:not(:first-of-type){display:none}#syslogTable th,#syslogTable td{width:0}#syslogTable td:first-of-type,#syslogTable th:last-of-type,#syslogTable td:last-of-type{width:auto;overflow:scroll}#syslogTable:not(.facility) th:nth-of-type(2),#syslogTable:not(.facility) td:nth-of-type(2){display:none}#syslogTable:not(.hostname) th:nth-of-type(4),#syslogTable:not(.hostname) td:nth-of-type(4){display:none}#syslogTable tr.lvl_emerg{background-color:#000}#syslogTable tr.lvl_alert{background-color:#DB78C6}#syslogTable tr.lvl_crit{background-color:#CF1819}#syslogTable tr.lvl_err{background-color:#C4731F}#syslogTable tr.lvl_warning{background-color:#B8BD25}#syslogTable tr.lvl_notice{background-color:#2496B3}#syslogTable tr.lvl_info{background-color:#6F7374}#syslogTable tr.lvl_debug{background-color:#449E74}#syslogTable.filter_emerg tr.lvl_alert,#syslogTable.filter_emerg tr.lvl_crit,#syslogTable.filter_emerg tr.lvl_err,#syslogTable.filter_emerg tr.lvl_warning,#syslogTable.filter_emerg tr.lvl_notice,#syslogTable.filter_emerg tr.lvl_info,#syslogTable.filter_emerg tr.lvl_debug{display:none}#syslogTable.filter_alert tr.lvl_crit,#syslogTable.filter_alert tr.lvl_err,#syslogTable.filter_alert tr.lvl_warning,#syslogTable.filter_alert tr.lvl_notice,#syslogTable.filter_alert tr.lvl_info,#syslogTable.filter_alert tr.lvl_debug{display:none}#syslogTable.filter_crit tr.lvl_err,#syslogTable.filter_crit tr.lvl_warning,#syslogTable.filter_crit tr.lvl_notice,#syslogTable.filter_crit tr.lvl_info,#syslogTable.filter_crit tr.lvl_debug{display:none}#syslogTable.filter_err tr.lvl_warning,#syslogTable.filter_err tr.lvl_notice,#syslogTable.filter_err tr.lvl_info,#syslogTable.filter_err tr.lvl_debug{display:none}#syslogTable.filter_warning tr.lvl_notice,#syslogTable.filter_warning tr.lvl_info,#syslogTable.filter_warning tr.lvl_debug{display:none}#syslogTable.filter_notice tr.lvl_info,#syslogTable.filter_notice tr.lvl_debug{display:none}#syslogTable.filter_info tr.lvl_debug{display:none}#syslogControls{color:#FC0;padding-top:10px}#syslogControls div{padding-left:10px;display:inline-block}label[for="severity"]{padding-left:5px}
 EOF
 			mount | grep -Fq '/www/Main_LogStatus_Content.asp' && umount '/www/Main_LogStatus_Content.asp'
 			rm -f '/jffs/www/Main_LogStatus_Content.asp'
