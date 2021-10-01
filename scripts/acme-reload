@@ -7,7 +7,7 @@
 # Le_Domain
 
 if [ "$Le_Domain" = 'example.com' ]; then
-	logger -t 'acme' "running renew script ($0)"
+	logger -t 'acme' "running reload script ($0)"
 
 	# Restart WebGUI
 	service restart_httpd
