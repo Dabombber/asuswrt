@@ -50,7 +50,7 @@ case "\$SCRIPT" in
 			for ARG in "\$@"; do
 				case "\$ARG" in
 					'--install-cert'|'--issue') ACME_ISSUE='yes';;
-					'--renew-hook') ACME_CMD='yes';;
+					'--reloadcmd') ACME_CMD='yes';;
 					'--key-file') ACME_KEY='yes';;
 					'--fullchain-file') ACME_CRT='yes';;
 				esac
@@ -58,7 +58,7 @@ case "\$SCRIPT" in
 			if [ "\$ACME_ISSUE" = 'yes' ]; then
 				[ "\$ACME_CRT" != 'yes' ] && set -- "\$@" '--fullchain-file' '/jffs/.cert/cert.pem'
 				[ "\$ACME_KEY" != 'yes' ] && set -- "\$@" '--key-file' '/jffs/.cert/key.pem'
-				[ "\$ACME_CMD" != 'yes' ] && set -- "\$@" '--renew-hook' '/jffs/scripts/.acme.event.sh renew'
+				[ "\$ACME_CMD" != 'yes' ] && set -- "\$@" '--reloadcmd' '/jffs/scripts/.acme.event.sh reload'
 			fi
 			'$ACME_ESCDIR/acme.sh' --home '$ACME_ESCDIR' --config-home '$ACME_ESCDIR/data' --cert-home '$ACME_ESCDIR/data/cert' "\$@"
 		else
@@ -66,9 +66,9 @@ case "\$SCRIPT" in
 			return 1
 		fi
 	;;
-	'renew')
-		if [ -x '/jffs/scripts/acme-renew' ]; then
-			/jffs/scripts/acme-renew
+	'reload')
+		if [ -x '/jffs/scripts/acme-reload' ]; then
+			/jffs/scripts/acme-reload
 		else
 			service reload_httpd
 		fi
