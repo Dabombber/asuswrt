@@ -112,31 +112,31 @@ acme_install() {
 #!/bin/sh
 
 dns_asus_add() {
-    HOSTNAME="${1#_acme-challenge.}"
-    TXTDATA="$2"
+	HOSTNAME="${1#_acme-challenge.}"
+	TXTDATA="$2"
 
-    # Reuse the current IP address
-   IP="$(nslookup "$HOSTNAME" 'ns1.asuscomm.com' | awk 'NR>2&&/^Address/{print $(NF==2?2:3);exit}')"
+	# Reuse the current IP address
+	IP="$(nslookup "$HOSTNAME" 'ns1.asuscomm.com' | awk 'NR>2&&/^Address/{print $(NF==2?2:3);exit}')"
 
-    # Router MAC address location is hardware dependent
-    for LAN_MAC_NAME in et0macaddr et1macaddr et2macaddr; do
-        MAC_ADDR="$(nvram get "$LAN_MAC_NAME")"
-        if [ -n "$MAC_ADDR" ] && [ "$MAC_ADDR" != '00:00:00:00:00:00' ]; then break; fi
-    done
+	# Router MAC address location is hardware dependent
+	for LAN_MAC_NAME in et0macaddr et1macaddr et2macaddr; do
+		MAC_ADDR="$(nvram get "$LAN_MAC_NAME")"
+		if [ -n "$MAC_ADDR" ] && [ "$MAC_ADDR" != '00:00:00:00:00:00' ]; then break; fi
+	done
 
-    # Use openssl to generate the password
-    PASSWORD="$(printf '%s' "${MAC_ADDR//:/}${IP//./}" | openssl md5 -hmac "$(nvram get secret_code)" 2>/dev/null | awk '{print toupper($2)}')"
+	# Use openssl to generate the password
+	PASSWORD="$(printf '%s' "${MAC_ADDR//:/}${IP//./}" | openssl md5 -hmac "$(nvram get secret_code)" 2>/dev/null | awk '{print toupper($2)}')"
 
-    HTTP_RESULT="$(curl -fs -w '%{http_code}' -o /dev/null -u "${MAC_ADDR//:/}:$PASSWORD" "http://nwsrv-ns1.asus.com/ddns/update.jsp?hostname=$HOSTNAME&acme_challenge=1&txtdata=$TXTDATA&myip=$IP")"
-    case "$HTTP_RESULT" in
-        200|220|230) return 0;;
-    esac
-    return 1
+	HTTP_RESULT="$(curl -fs -w '%{http_code}' -o /dev/null -u "${MAC_ADDR//:/}:$PASSWORD" "http://ns1.asuscomm.com/ddns/update.jsp?hostname=$HOSTNAME&acme_challenge=1&txtdata=$TXTDATA&myip=$IP")"
+	case "$HTTP_RESULT" in
+		200|220|230) return 0;;
+	esac
+	return 1
 }
 
 dns_asus_rm() {
-    # txt record is auto-removed by asus on next ddns update
-    return 0
+	# txt record is auto-removed by asus on next ddns update
+	return 0
 }
 EOF
 	true; return $?;
