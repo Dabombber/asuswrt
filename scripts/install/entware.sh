@@ -36,15 +36,15 @@ entware_prepare() {
 		if [ -z "$ARG" ]; then
 			echo 'Invalid path specified' >&2
 			false; return $?
-		elif ! printf '%s' "${ARG%% }" | grep -qE "$ENTWARE_TYPES"; then
+		elif ! printf '%s' "${ARG%% *}" | grep -qE "$ENTWARE_TYPES"; then
 			echo 'Unsupported partition type' >&2
 			false; return $?
-		elif ! mount | grep -F " on ${ARG# } type ${ARG%% }" | grep -qE ' \(([^ ]*,)?rw(,[^ ]*)?\)$'; then
+		elif ! mount | grep -F " on ${ARG#* } type ${ARG%% *}" | grep -qE ' \(([^ ]*,)?rw(,[^ ]*)?\)$'; then
 			echo 'Partition must be writable' >&2
 			false; return $?
-		elif [ "$ENTWARE_MOUNT" != "${ARG# }" ]; then
-			echo "Using root of specified path (${ARG# })"
-			ENTWARE_MOUNT="${ARG# }"
+		elif [ "$ENTWARE_MOUNT" != "${ARG#* }" ]; then
+			echo "Using root of specified path (${ARG#* })"
+			ENTWARE_MOUNT="${ARG#* }"
 		fi
 	fi
 
